@@ -1,8 +1,5 @@
 # CI for CuePal — a Windows-only Rust app (see docs/CuePal PRD v2.md).
-#
 # Runs on every push to main and on every pull request.
-# While the repo has no Cargo.toml yet (code lands with milestone M0),
-# the job skips itself so the branch stays green.
 
 name: CI
 
@@ -19,7 +16,6 @@ jobs:
   windows:
     name: fmt, clippy, test (windows-latest)
     runs-on: windows-latest
-    if: ${{ hashFiles('Cargo.toml') != '' }}
     steps:
       - uses: actions/checkout@v4
 

@@ -1,4 +1,5 @@
 mod platform;
+mod speech;
 
 use platform::version::{is_supported, os_build};
 

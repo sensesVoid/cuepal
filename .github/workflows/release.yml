@@ -1,7 +1,8 @@
 # Release pipeline — builds the portable zip described in the PRD:
-# cuepal.exe + libvosk.dll + model folder, attached to a GitHub release.
+# cuepal.exe + libvosk.dll (+ 3 MinGW runtime DLLs) + model folder, attached
+# to a GitHub release.
 #
-# Trigger: push a tag like v0.1.0. Skips itself while no Cargo.toml exists.
+# Trigger: push a tag like v0.1.0.
 
 name: Release
 
@@ -20,7 +21,6 @@ jobs:
   package:
     name: Package portable zip (windows-latest)
     runs-on: windows-latest
-    if: ${{ hashFiles('Cargo.toml') != '' }}
     steps:
       - uses: actions/checkout@v4
 
