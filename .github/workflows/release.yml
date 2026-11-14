@@ -1,6 +1,6 @@
-# Release pipeline — builds the portable zip described in the PRD:
-# cuepal.exe + libvosk.dll (+ 3 MinGW runtime DLLs) + model folder, attached
-# to a GitHub release.
+# Release pipeline — builds a portable zip for CuePal:
+# cuepal.exe + libvosk.dll (+ 3 MinGW runtime DLLs). The Vosk speech model is
+# embedded in the binary (extracted to a per-user cache on first voice-mode run).
 #
 # Trigger: push a tag like v0.1.0.
 
@@ -52,10 +52,10 @@ jobs:
           $ErrorActionPreference = "Stop"
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item target/release/cuepal.exe dist/
-          # libvosk.dll plus its three MinGW runtime DLLs — all required at runtime
+          # libvosk.dll plus its three MinGW runtime DLLs — all required at runtime.
+          # Speech model is embedded in cuepal.exe (extracted on first voice-mode run).
           Copy-Item "vosk-api/vosk-win64-0.3.45/*.dll" dist/
           if (-not (Test-Path "dist/libvosk.dll")) { throw "libvosk.dll not found in vosk-win64-0.3.45.zip" }
-          Copy-Item model dist/model -Recurse
           Compress-Archive -Path "dist/*" -DestinationPath "CuePal-${{ github.ref_name }}-win64.zip"
 
       - name: Attach to GitHub release
