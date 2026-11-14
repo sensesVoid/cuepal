@@ -36,12 +36,13 @@ fn main() {
         }
     }
 
-    // Watcher thread: discover the overlay HWND once it exists, apply flags.
+    // Watcher thread: discover the overlay HWND once it exists, apply initial flags.
     std::thread::spawn(|| {
         for _ in 0..100 {
             if let Some(h) = platform::flags::find_overlay_hwnd() {
                 unsafe {
-                    let _ = platform::flags::apply_overlay_flags(h);
+                    // Default to interactive/notepad-like mode for smooth click/drag.
+                    let _ = platform::flags::apply_window_mode(h, false);
                 }
                 log::info!("overlay hwnd flags applied");
                 return;

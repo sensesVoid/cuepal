@@ -109,8 +109,8 @@ impl OverlayApp {
             state: StateCtx::new(manual_mode),
             topics: M1_NOTES,
             page: 0,
-            opacity: 0.88,
-            click_through: true,
+            opacity: 0.92,
+            click_through: false,
             visible: true,
             move_mode: false,
             last_speech_ended_ms: None,
@@ -149,8 +149,9 @@ impl OverlayApp {
                 self.step_topic(-1);
             }
             Hotkey::MoveMode => {
-                self.move_mode = !self.move_mode;
-                self.click_through = !self.move_mode;
+                // Toggle between interactive/notepad-like mode and overlay click-through mode.
+                self.click_through = !self.click_through;
+                self.move_mode = !self.click_through;
                 if let Some(h) = self.hwnd {
                     unsafe {
                         set_click_through(h, self.click_through);
@@ -410,6 +411,7 @@ impl eframe::App for OverlayApp {
                 }
                 tray::TrayCommand::ToggleClickThrough => {
                     self.click_through = !self.click_through;
+                    self.move_mode = !self.click_through;
                     if let Some(h) = self.hwnd {
                         unsafe {
                             set_click_through(h, self.click_through);
@@ -436,21 +438,18 @@ impl eframe::App for OverlayApp {
         self.drain_events();
         self.maybe_auto_reset();
 
-        // HWND discovery + flag re-apply.
+        // HWND discovery + flag re-apply for current mode.
         if self.hwnd.is_none() {
             self.hwnd = cached_hwnd();
             if let Some(h) = self.hwnd {
                 unsafe {
-                    let _ = crate::platform::flags::apply_overlay_flags(h);
-                    if self.click_through {
-                        set_click_through(h, self.click_through);
-                    }
+                    set_click_through(h, self.click_through);
                 }
             }
         }
         if let Some(h) = self.hwnd {
             unsafe {
-                ensure_flags(h);
+                ensure_flags(h, self.click_through);
             }
         }
 
@@ -502,13 +501,13 @@ impl eframe::App for OverlayApp {
                     })
                     .response;
 
-                // Drag: in move mode or when click-through is off, allow dragging from the header.
+                // Drag: allow smooth dragging from the header when interactive.
                 let drag_resp = ui.interact(
-                    header_resp.rect,
+                    header_resp.rect.expand2(Vec2::new(0.0, 4.0)),
                     ui.make_persistent_id("header_drag"),
                     Sense::click_and_drag(),
                 );
-                if (self.move_mode || !self.click_through) && drag_resp.drag_started() {
+                if !self.click_through && drag_resp.drag_started() {
                     ctx.send_viewport_cmd(ViewportCommand::StartDrag);
                 }
 

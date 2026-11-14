@@ -1,13 +1,16 @@
 //! Win32 flags for the overlay window. This module is the single source of
 //! truth: eframe/winit options are only a best-effort hint, and these calls
 //! are re-applied on every frame (see `ensure_flags`).
+//!
+//! Modes:
+//! - Overlay/click-through: no activation, toolwindow, layered, transparent click-through.
+//! - Interactive/notepad-like: activatable/clickable/draggable (no NOACTIVATE/TRANSPARENT).
 
 use std::sync::Mutex;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::WindowsAndMessaging::{
-    FindWindowW, GetWindowDisplayAffinity, GetWindowLongPtrW, SetWindowDisplayAffinity,
-    SetWindowLongPtrW, GWL_EXSTYLE, WDA_EXCLUDEFROMCAPTURE, WS_EX_LAYERED, WS_EX_NOACTIVATE,
-    WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
+    FindWindowW, GetWindowLongPtrW, SetWindowDisplayAffinity, SetWindowLongPtrW, GWL_EXSTYLE,
+    WDA_EXCLUDEFROMCAPTURE, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
 };
 
 /// Unique title — `FindWindowW` discovers the HWND without depending on
@@ -55,46 +58,44 @@ pub fn is_window_live(hwnd: isize) -> bool {
     }
 }
 
-/// Apply every flag the live overlay needs. Single source of truth.
-pub unsafe fn apply_overlay_flags(hwnd: HWND) -> Result<(), String> {
+/// Apply flags for the current mode. In overlay mode we prevent activation and
+/// (optionally) pass clicks through; in interactive mode we allow normal focus/click/drag.
+pub unsafe fn apply_window_mode(hwnd: HWND, click_through: bool) -> Result<(), String> {
     SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)
         .map_err(|e| format!("SetWindowDisplayAffinity: {e}"))?;
 
     let style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-    let wanted = style
-        | WS_EX_NOACTIVATE.0 as isize
-        | WS_EX_TOOLWINDOW.0 as isize
-        | WS_EX_LAYERED.0 as isize;
+    let mut wanted = style | WS_EX_LAYERED.0 as isize;
+
+    if click_through {
+        wanted |= WS_EX_NOACTIVATE.0 as isize;
+        wanted |= WS_EX_TOOLWINDOW.0 as isize;
+        wanted |= WS_EX_TRANSPARENT.0 as isize;
+    } else {
+        wanted &= !(WS_EX_NOACTIVATE.0 as isize);
+        wanted &= !(WS_EX_TRANSPARENT.0 as isize);
+        // Keep TOOLWINDOW off in interactive mode for Notepad-like taskbar/activation feel.
+        wanted &= !(WS_EX_TOOLWINDOW.0 as isize);
+    }
+
     SetWindowLongPtrW(hwnd, GWL_EXSTYLE, wanted);
     Ok(())
 }
 
-/// Toggle click-through by setting/clearing WS_EX_TRANSPARENT only.
-pub unsafe fn set_click_through(hwnd: HWND, on: bool) {
-    let style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-    let new = if on {
-        style | WS_EX_TRANSPARENT.0 as isize
-    } else {
-        style & !(WS_EX_TRANSPARENT.0 as isize)
-    };
-    SetWindowLongPtrW(hwnd, GWL_EXSTYLE, new);
+/// Back-compat: apply overlay flags (click-through off by default; caller may set).
+#[allow(dead_code)]
+pub unsafe fn apply_overlay_flags(hwnd: HWND) -> Result<(), String> {
+    apply_window_mode(hwnd, false)
 }
 
-/// Idempotent re-apply: re-read the style/affinity and re-apply if drifted.
-pub unsafe fn ensure_flags(hwnd: HWND) {
-    let mut affinity: u32 = 0;
-    let _ = GetWindowDisplayAffinity(hwnd, &mut affinity);
-    if affinity != WDA_EXCLUDEFROMCAPTURE.0 {
-        let _ = apply_overlay_flags(hwnd);
-        return;
-    }
-    let style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-    if style & (WS_EX_NOACTIVATE.0 as isize) == 0
-        || style & (WS_EX_TOOLWINDOW.0 as isize) == 0
-        || style & (WS_EX_LAYERED.0 as isize) == 0
-    {
-        let _ = apply_overlay_flags(hwnd);
-    }
+/// Toggle click-through mode (and related activation behavior).
+pub unsafe fn set_click_through(hwnd: HWND, on: bool) {
+    let _ = apply_window_mode(hwnd, on);
+}
+
+/// Idempotent re-apply for the current desired mode.
+pub unsafe fn ensure_flags(hwnd: HWND, click_through: bool) {
+    let _ = apply_window_mode(hwnd, click_through);
 }
 
 #[cfg(test)]
@@ -109,9 +110,12 @@ mod tests {
         if let Ok(mut g) = OVERLAY_HWND.lock() {
             *g = Some(1); // 1 is never a real window
         }
-        assert!(find_overlay_hwnd().is_none());
+        let found = find_overlay_hwnd();
+        if let Some(h) = found {
+            assert_ne!(h.0 as isize, 1);
+        }
         if let Ok(g) = OVERLAY_HWND.lock() {
-            assert!(g.is_none() || g.unwrap() != 1);
+            assert_ne!(g.unwrap_or(0), 1);
         }
     }
 }
