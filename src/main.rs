@@ -1,3 +1,4 @@
+mod audio;
 mod platform;
 mod speech;
 
