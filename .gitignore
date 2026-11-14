@@ -3,6 +3,9 @@
 
 # Downloaded binaries and models (CI fetches these; never commit them)
 /libvosk.dll
+/libgcc_s_seh-1.dll
+/libstdc++-6.dll
+/libwinpthread-1.dll
 /vosk-api/
 /model/
 /model-staging/
