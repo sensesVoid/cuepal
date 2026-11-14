@@ -4,6 +4,7 @@ mod matcher;
 mod notes;
 mod platform;
 mod speech;
+mod state;
 
 use app::SpikeApp;
 use platform::flags::OVERLAY_TITLE;
