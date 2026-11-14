@@ -1,5 +1,6 @@
 mod app;
 mod audio;
+mod hotkeys;
 mod matcher;
 mod notes;
 mod platform;
