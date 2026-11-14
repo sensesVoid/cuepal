@@ -1,8 +1,9 @@
 use crate::audio::{start_capture, AudioStatus, NativeChunk};
 use crate::platform::flags::{cached_hwnd, ensure_flags, set_click_through};
+use crate::platform::tray;
 use crate::speech::engine::{Engine, MatchInfo, MicState, UiEvent};
 use arc_swap::ArcSwap;
-use eframe::egui::{self, Color32, CornerRadius, RichText};
+use eframe::egui::{self, Color32, CornerRadius, RichText, ViewportCommand};
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -21,6 +22,7 @@ pub struct SpikeApp {
     cues: Arc<ArcSwap<Vec<String>>>,
     opacity: f32,
     click_through: bool,
+    visible: bool,
     last_match: Option<MatchInfo>,
     cooldown_until: Instant,
     #[allow(dead_code)]
@@ -66,6 +68,7 @@ impl SpikeApp {
             cues,
             opacity: 0.85,
             click_through: true,
+            visible: true,
             last_match: None,
             cooldown_until: Instant::now(),
             events_rx,
@@ -77,6 +80,25 @@ impl SpikeApp {
 
 impl eframe::App for SpikeApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        // Tray commands (polled from the global menu-event channel).
+        for cmd in tray::poll_commands() {
+            match cmd {
+                tray::TrayCommand::ToggleVisible => {
+                    self.visible = !self.visible;
+                    ui.ctx().send_viewport_cmd(ViewportCommand::Visible(self.visible));
+                }
+                tray::TrayCommand::ToggleClickThrough => {
+                    self.click_through = !self.click_through;
+                    if let Some(h) = self.hwnd {
+                        unsafe { set_click_through(h, self.click_through); }
+                    }
+                }
+                tray::TrayCommand::Quit => {
+                    ui.ctx().send_viewport_cmd(ViewportCommand::Close);
+                }
+            }
+        }
+
         // Drain engine events.
         while let Ok(ev) = self.events_rx.try_recv() {
             match ev {

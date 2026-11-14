@@ -33,6 +33,8 @@ fn main() {
         log::warn!("overlay hwnd not found within 10s");
     });
 
+    let _tray = platform::tray::create_tray();
+
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_inner_size([420.0, 180.0])
