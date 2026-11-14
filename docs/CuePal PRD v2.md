@@ -41,6 +41,19 @@ Amended Nov 14, 2026. CuePal ships in two stages: **V0** is the personal tool, b
 - **English-only, with the model path as a setting.** No language UI; `model_path` in settings names the Vosk model folder, so another model can be dropped in without code changes.
 - **Zip plus docs for V0 and V1.** The README documents the SmartScreen warning path; a certificate is bought only if real users hit friction.
 
+**Builder-check calls (Nov 14, 2026).** Two points a plan review raised; both settled as calls by the author of this amendment.
+
+- **Next and previous hotkeys moved to Ctrl+Alt+Shift+Right and Left.** Ctrl+Alt+Arrow is claimed by Intel display-rotation hotkeys on many laptops through low-level driver hooks, which the startup conflict check cannot see; a mid-interview screen rotation is the worst failure this product can cause. Still rebindable; verified on the author's machine at M1.
+- **The V1 gate "recall proven on voices other than the author's" has a fallback.** If no second human voice is realistically available by M4 planning, the gate accepts public speech corpora as the second-voice proxy. Decided at M4.
+
+**Author context (Nov 14, 2026).** Facts the plan was missing.
+
+- No date pressure for V0: every milestone gate runs as written, nothing is compressed.
+- The target laptop is older and low on RAM: the smaller-model fallback from the risk table is scheduled work, not contingency.
+- Interviews are taken on a USB wired headset, the best case for recognition.
+- The M1 test set is built from the author's real cues, provided typed. A short recording of those cues on the real mic is still needed for the spoken-recall part of the M1 gate; the session is pending, not cut.
+- V0 capture matrix: Zoom (desktop and window share), Microsoft Teams, Google Meet in Chrome, and one further platform the author still needs to name before M3.
+
 ## Overview, goals, non-goals
 
 CuePal is an offline Windows overlay in Rust that shows a candidate's own bullet points when it hears a cue phrase, and hides them from screen capture. Everything runs on the local CPU with no network use.
@@ -91,7 +104,7 @@ V0 covers FR-1 to FR-9; later items are marked. Each requirement is testable as 
 | FR-5 | Persistence | notes.json in %APPDATA%/CuePal, schema-versioned, written atomically (temp file then rename), previous copy kept as notes.json.bak. External edits are picked up by a debounced file watcher. An invalid file keeps the last good notes and shows a banner with the error line. | V0 |
 | FR-6 | Voice cue matching | Vosk streaming recognizer with a grammar built from all cues plus an unknown-word token. Match on normalized partial results (lowercase, punctuation stripped, filler words dropped). Longest cue wins; a cooldown of 1.5 s blocks re-triggering; a card already open ignores its own cue. | V0 |
 | FR-7 | State machine | Home to Active(id) on a match. Active(id) to Home when (a) a closing cue is heard, or (b) speech has ended and silence exceeds the reset window (default 2.5 s, range 1.5 to 5.0 s) and the card has been shown for at least 3 s. A pinned card never auto-resets. Esc or the home hotkey always returns home. In manual mode (mic_enabled false) the same machine runs without speech: no card auto-resets, the countdown bar is hidden, and pin has no effect since nothing auto-resets. | V0 |
-| FR-8 | Hotkeys | Registered with RegisterHotKey, no focus change. Defaults: Ctrl+Alt+G hide or show, Ctrl+Alt+H home, Ctrl+Alt+P pin, Ctrl+Alt+Right and Left next or previous card, Ctrl+Alt+M move mode. All rebindable; conflicts reported at startup. | V0 |
+| FR-8 | Hotkeys | Registered with RegisterHotKey, no focus change. Defaults: Ctrl+Alt+G hide or show, Ctrl+Alt+H home, Ctrl+Alt+P pin, Ctrl+Alt+Shift+Right and Left next or previous card, Ctrl+Alt+M move mode. All rebindable; conflicts reported at startup. Next and previous avoid Ctrl+Alt+Arrow, which collides with Intel display-rotation chords that RegisterHotKey cannot see. | V0 |
 | FR-9 | Audio input | cpal in shared mode, device picker, native sample rate resampled to 16 kHz mono, handles unplug and re-plug. A mic_enabled setting of false runs manual mode: no capture stream is opened, the dot shows off, and hotkeys alone drive cards. Mic dot states: listening, no signal, error, off. | V0 |
 | FR-10 | Rehearsal mode | Editor mode that runs the live matcher and logs matches on screen, without showing the overlay. | V1 |
 | FR-11 | Call-audio cues | Optional WASAPI loopback so the interviewer's words can open cards. Off by default, local only, with its own matching rules. | post-V1 |
@@ -207,7 +220,7 @@ v1 metrics were pass or fail by feel. These are measurable and each has a named 
 | Manual mode | No capture stream is opened with the mic disabled, and hotkeys step, pin and home cards | Debug log stream check plus a hotkey walkthrough |
 | Soak | 2 hours with no crash, memory growth under 50 MB | Overnight run script |
 
-**Capture matrix.** Zoom (entire desktop and single window), Microsoft Teams, Google Meet in Chrome, OBS (display and window capture), Windows Snipping Tool and Print Screen, Xbox Game Bar recording, and a remote desktop session. Cases that cannot be hidden, such as a phone camera aimed at the screen or an HDMI capture card, are documented as out of scope. V0 runs the matrix only on the author's own interview apps; V1 runs the full set.
+**Capture matrix.** Zoom (entire desktop and single window), Microsoft Teams, Google Meet in Chrome, OBS (display and window capture), Windows Snipping Tool and Print Screen, Xbox Game Bar recording, and a remote desktop session. Cases that cannot be hidden, such as a phone camera aimed at the screen or an HDMI capture card, are documented as out of scope. V0 runs the matrix on the author's apps: Zoom (desktop and window share), Microsoft Teams, Google Meet in Chrome, plus one platform still to be named; V1 runs the full set.
 
 ## Milestones
 
@@ -216,7 +229,7 @@ The riskiest assumptions (window behavior, memory, recognition accuracy) are tes
 | # | Milestone | Version | Scope | Gate |
 | --- | --- | --- | --- | --- |
 | M0 | Platform spike | V0 | Transparent egui window with capture exclusion, no-activate, click-through, tray; Vosk with a 5-cue grammar on a live mic | Overlay invisible in Zoom desktop share; blur test page quiet; memory and latency numbers recorded |
-| M1 | Voice core | V0 | Audio thread, resampler, matcher, state machine, hotkeys, manual mode, hardcoded notes | Latency, recall and false-trigger targets met on the test set; manual-mode hotkey walkthrough passes |
+| M1 | Voice core | V0 | Audio thread, resampler, matcher, state machine, hotkeys, manual mode, hardcoded notes; smaller-model option if M0 memory numbers exceed budget | Latency, recall and false-trigger targets met on the test set; manual-mode hotkey walkthrough passes |
 | M2 | Notes and editor | V0 | notes.json, atomic save, watcher, editor, cue validation, test box | Authoring and persistence criteria pass |
 | M3 | V0 hardening | V0 | Device loss, DPI and multi-display, portable zip, soak test; capture matrix on the author's own apps | Author's capture matrix, manual-mode test and 2-hour soak pass |
 | M4 | Shareable release | V1 | Rehearsal mode, import and export, first-run notice, install README with the SmartScreen path, privacy page; recall and validation re-tested with other voices; full capture matrix | Full capture matrix, recall proven on voices other than the author's, and 2-hour soak pass |
@@ -228,7 +241,7 @@ The riskiest assumptions (window behavior, memory, recognition accuracy) are tes
 | --- | --- | --- |
 | Capture exclusion fails on an app or driver combination | Notes visible to others | Support matrix, in-app Windows version check, M0 gate |
 | Vosk accuracy low for the user's accent or mic | Missed cues | Grammar restriction, cue test box, recall test, longer cue phrases |
-| Memory above budget on a low-RAM laptop | Sluggish overlay | Measure in M0; offer a smaller model option |
+| Memory above budget on the low-RAM target laptop | Sluggish overlay | Known constraint: the target machine is older and low-RAM; measure in M0 and build the smaller-model option into M1 if the numbers demand it |
 | Interviewer audio bleeds into the mic via speakers | False triggers | Recommend headphones; cooldown; closing-cue and pin controls |
 | Unsigned binary flagged by SmartScreen or antivirus | Install friction | README documents the warning path for V0 and V1; a certificate is bought only if real users hit friction |
 | Window flags break under some GPU backends | Overlay steals focus or shows a border | Test glow and wgpu backends in M0; fall back to raw Win32 window if needed |
