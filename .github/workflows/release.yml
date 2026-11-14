@@ -32,26 +32,19 @@ jobs:
       - name: Cache cargo build
         uses: Swatinem/rust-cache@v2
 
-      - name: Build release binary
-        run: cargo build --release
-
-      - name: Fetch libvosk.dll (pinned vosk-api v0.3.45)
+      - name: Fetch libvosk.dll and model (pinned, model embedded at build time)
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
           Invoke-WebRequest -Uri "https://github.com/alphacep/vosk-api/releases/download/v0.3.45/vosk-win64-0.3.45.zip" -OutFile vosk-api.zip
           Expand-Archive -Path vosk-api.zip -DestinationPath vosk-api
-
-      # Small English model, Apache 2.0 licensed, redistributable.
-      # Matches the PRD settings default: model_path = "model".
-      - name: Fetch Vosk small English model
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
           Invoke-WebRequest -Uri "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip" -OutFile model.zip
           Expand-Archive -Path model.zip -DestinationPath model-staging
           $src = Get-ChildItem model-staging -Directory | Select-Object -First 1
           Move-Item $src.FullName model
+
+      - name: Build release binary
+        run: cargo build --release
 
       - name: Stage portable zip
         shell: pwsh

@@ -28,10 +28,10 @@ jobs:
       - name: Cache cargo build
         uses: Swatinem/rust-cache@v2
 
-      # Vosk is bound at runtime via libloading, so libvosk.dll (and its three
-      # MinGW runtime DLLs, which are hard dependencies) must be present next
-      # to the test binary. Pinned prebuilt release.
-      - name: Fetch libvosk.dll + runtime deps (pinned vosk-api v0.3.45)
+      # The Vosk speech model is embedded into the binary at compile time, so it
+      # must be present in ./model before build/test. libvosk.dll (+ MinGW runtime
+      # DLLs) are loaded at runtime and must be next to the test binary.
+      - name: Fetch Vosk runtime DLLs and embedded model (pinned)
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -39,6 +39,10 @@ jobs:
           Expand-Archive -Path vosk-api.zip -DestinationPath vosk-api
           Copy-Item "vosk-api/vosk-win64-0.3.45/*.dll" .
           if (-not (Test-Path "libvosk.dll")) { throw "libvosk.dll not found in vosk-win64-0.3.45.zip" }
+          Invoke-WebRequest -Uri "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip" -OutFile model.zip
+          Expand-Archive -Path model.zip -DestinationPath model-staging
+          $src = Get-ChildItem model-staging -Directory | Select-Object -First 1
+          Move-Item $src.FullName model
           Add-Content $env:GITHUB_PATH $PWD.Path
 
       - name: Check formatting

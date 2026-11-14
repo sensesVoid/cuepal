@@ -54,9 +54,10 @@ pub struct EngineHandle {}
 pub struct Engine;
 
 impl Engine {
-    /// Build the recognizer and spawn the processing thread. Any FFI failure
-    /// returns Err before any thread starts (FR-9). When `mic_enabled` is false
-    /// (manual mode), no FFI load or thread is started.
+    /// Spawn the recognizer thread. When `mic_enabled` is false (manual mode),
+    /// no FFI load or thread is started. Model/DLL load errors are reported as
+    /// `UiEvent::Mic(MicState::Error(..))` on `events_tx` so the UI stays responsive
+    /// (including first-run extraction of the built-in model).
     pub fn spawn(
         mic_enabled: bool,
         cues: Arc<ArcSwap<CueIndex>>,
@@ -66,23 +67,38 @@ impl Engine {
         if !mic_enabled {
             return Ok(EngineHandle {});
         }
-        let api = unsafe { VoskApi::load(None) }?;
-        api.set_loglevel(0);
-        let api = Arc::new(api);
-        let model = unsafe { Model::new(&api, &model_path()) }?;
-        let recognizer = unsafe { Recognizer::new(model, 16000.0) }?;
-        let topics: CueIndex = **cues.load();
-        recognizer.set_grammar(build_grammar_json_from_topics(topics).as_str());
 
+        let events_tx_thread = events_tx.clone();
         std::thread::Builder::new()
             .name("cuepal-recognizer".to_string())
-            .spawn(move || run_loop(recognizer, cues, events_tx, pcm_rx))
+            .spawn(move || {
+                let recognizer = match init_recognizer(&cues) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        let _ = events_tx_thread.send(UiEvent::Mic(MicState::Error(e.to_string())));
+                        return;
+                    }
+                };
+                run_loop(recognizer, cues, events_tx_thread, pcm_rx)
+            })
             .map_err(|e| FfiError::Symbol(format!("spawn recognizer thread: {e}")))?;
         Ok(EngineHandle {})
     }
 }
 
-/// Resolve the model folder relative to the executable.
+fn init_recognizer(cues: &Arc<ArcSwap<CueIndex>>) -> Result<Recognizer, FfiError> {
+    let model_path = resolve_model_path().map_err(FfiError::Symbol)?;
+    let api = unsafe { VoskApi::load(None) }?;
+    api.set_loglevel(0);
+    let api = Arc::new(api);
+    let model = unsafe { Model::new(&api, &model_path) }?;
+    let recognizer = unsafe { Recognizer::new(model, 16000.0) }?;
+    let topics: CueIndex = **cues.load();
+    recognizer.set_grammar(build_grammar_json_from_topics(topics).as_str());
+    Ok(recognizer)
+}
+
+/// Resolve the model folder relative to the executable (external/override path).
 pub fn model_path() -> String {
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
@@ -90,6 +106,17 @@ pub fn model_path() -> String {
         }
     }
     "model".to_string()
+}
+
+/// Resolve the effective model path: prefer an external `model/` folder next to
+/// the executable, otherwise extract and use the built-in embedded model.
+pub fn resolve_model_path() -> Result<String, String> {
+    let external = model_path();
+    if std::path::Path::new(&external).is_dir() {
+        return Ok(external);
+    }
+    let extracted = crate::speech::builtin_model::ensure_extracted()?;
+    Ok(extracted.to_string_lossy().to_string())
 }
 
 fn run_loop(
