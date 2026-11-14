@@ -1,8 +1,9 @@
-use crate::notes::M1_NOTES;
 use crate::audio::{start_capture, AudioStatus, NativeChunk};
+use crate::notes::M1_NOTES;
 use crate::platform::flags::{cached_hwnd, ensure_flags, set_click_through};
 use crate::platform::tray;
 use crate::speech::engine::{Engine, MatchInfo, MicState, UiEvent};
+use crate::state::StateCtx;
 use arc_swap::ArcSwap;
 use eframe::egui::{self, Color32, CornerRadius, RichText, ViewportCommand};
 use std::sync::mpsc;
@@ -13,6 +14,8 @@ pub struct SpikeApp {
     mic: MicState,
     #[allow(dead_code)]
     cues: Arc<ArcSwap<crate::notes::CueIndex>>,
+    #[allow(dead_code)]
+    state: StateCtx,
     opacity: f32,
     click_through: bool,
     visible: bool,
@@ -25,45 +28,49 @@ pub struct SpikeApp {
 }
 
 impl SpikeApp {
-    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(_cc: &eframe::CreationContext<'_>, mic_enabled: bool) -> Self {
         let cues = Arc::new(ArcSwap::from_pointee(crate::notes::M1_NOTES));
-        let (status_tx, status_rx) = mpsc::channel();
         let (pcm_tx, pcm_rx) = mpsc::channel::<NativeChunk>();
         let (events_tx, events_rx) = mpsc::channel();
-        let events_tx_for_thread = events_tx.clone();
+        let manual_mode = !mic_enabled;
 
-        let audio_session = start_capture(status_tx.clone(), pcm_tx).ok();
+        let (audio_session, initial_mic) = if mic_enabled {
+            let (status_tx, status_rx) = mpsc::channel();
+            let events_tx_for_thread = events_tx.clone();
+            let audio_session = start_capture(status_tx.clone(), pcm_tx).ok();
 
-        // Start capture + engine; if either fails, record the error as a mic state.
-        if audio_session.is_some() { /* stream kept alive in state */ }
-        match Engine::spawn(cues.clone(), events_tx, pcm_rx) {
-            Ok(_) => {}
-            Err(e) => {
+            if let Err(e) = Engine::spawn(true, cues.clone(), events_tx, pcm_rx) {
                 let _ = status_tx.send(AudioStatus::Error(e.to_string()));
             }
-        }
 
-        // Forward audio status into events so the UI dot reflects them.
-        std::thread::spawn(move || {
-            while let Ok(st) = status_rx.recv() {
-                let ms = match st {
-                    AudioStatus::Running { .. } => MicState::Listening,
-                    AudioStatus::Error(e) => MicState::Error(e),
-                };
-                let _ = events_tx_for_thread.send(UiEvent::Mic(ms));
-            }
-        });
+            // Forward audio status into events so the UI dot reflects them.
+            std::thread::spawn(move || {
+                while let Ok(st) = status_rx.recv() {
+                    let ms = match st {
+                        AudioStatus::Running { .. } => MicState::Listening,
+                        AudioStatus::Error(e) => MicState::Error(e),
+                    };
+                    let _ = events_tx_for_thread.send(UiEvent::Mic(ms));
+                }
+            });
+            (audio_session, MicState::NoSignal)
+        } else {
+            // Manual mode: no capture stream, engine is a no-op, mic dot grey/off.
+            let _ = Engine::spawn(false, cues.clone(), events_tx, pcm_rx);
+            (None, MicState::Off)
+        };
 
         Self {
-            mic: MicState::NoSignal,
+            mic: initial_mic,
             cues,
+            state: StateCtx::new(manual_mode),
             opacity: 0.85,
             click_through: true,
             visible: true,
             last_match: None,
             cooldown_until: Instant::now(),
-            events_rx,
             audio_session,
+            events_rx,
             hwnd: None,
         }
     }

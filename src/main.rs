@@ -20,7 +20,9 @@ fn main() {
         );
         std::process::exit(1);
     }
-    log::info!("cuepal m0 scaffold ok (os build {build})");
+    let manual = std::env::args().any(|a| a == "--manual");
+    let mic_enabled = !manual;
+    log::info!("cuepal m0 scaffold ok (os build {build}, mic_enabled={mic_enabled})");
 
     // Watcher thread: discover the overlay HWND once it exists, apply flags.
     std::thread::spawn(|| {
@@ -55,6 +57,6 @@ fn main() {
     let _ = eframe::run_native(
         "CuePal Overlay (spike)",
         options,
-        Box::new(|cc| Ok(Box::new(SpikeApp::new(cc)))),
+        Box::new(move |cc| Ok(Box::new(SpikeApp::new(cc, mic_enabled)))),
     );
 }

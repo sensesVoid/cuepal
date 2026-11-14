@@ -53,12 +53,17 @@ pub struct Engine;
 
 impl Engine {
     /// Build the recognizer and spawn the processing thread. Any FFI failure
-    /// returns Err before any thread starts (FR-9).
+    /// returns Err before any thread starts (FR-9). When `mic_enabled` is false
+    /// (manual mode), no FFI load or thread is started.
     pub fn spawn(
+        mic_enabled: bool,
         cues: Arc<ArcSwap<CueIndex>>,
         events_tx: mpsc::Sender<UiEvent>,
         pcm_rx: mpsc::Receiver<NativeChunk>,
     ) -> Result<EngineHandle, FfiError> {
+        if !mic_enabled {
+            return Ok(EngineHandle {});
+        }
         let api = unsafe { VoskApi::load(None) }?;
         api.set_loglevel(0);
         let api = Arc::new(api);
