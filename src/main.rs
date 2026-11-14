@@ -55,7 +55,9 @@ fn main() {
 
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
-            .with_inner_size([420.0, 180.0])
+            .with_inner_size([420.0, 220.0])
+            .with_position([80.0, 80.0])
+            .with_visible(true)
             .with_resizable(true)
             .with_transparent(true)
             .with_always_on_top()
@@ -63,13 +65,18 @@ fn main() {
             .with_taskbar(false)
             .with_active(false)
             .with_title(OVERLAY_TITLE),
+        renderer: eframe::Renderer::Glow,
         ..Default::default()
     };
 
     let _hotkey_session = hotkey_session;
-    let _ = eframe::run_native(
+    log::info!("starting eframe window");
+    if let Err(e) = eframe::run_native(
         "CuePal Overlay (spike)",
         options,
         Box::new(move |cc| Ok(Box::new(OverlayApp::new(cc, hotkey_rx, mic_enabled)))),
-    );
+    ) {
+        eprintln!("eframe::run_native failed: {e}");
+    }
+    log::info!("eframe window exited");
 }

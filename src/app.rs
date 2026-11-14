@@ -6,7 +6,9 @@ use crate::platform::tray;
 use crate::speech::engine::{Engine, MicState, UiEvent};
 use crate::state::{countdown_ms, should_reset, AppState, StateCtx};
 use arc_swap::ArcSwap;
-use eframe::egui::{self, Color32, CornerRadius, RichText, ViewportCommand};
+use eframe::egui::{
+    self, Color32, CornerRadius, Frame, Margin, RichText, Sense, Stroke, Vec2, ViewportCommand,
+};
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -51,10 +53,27 @@ pub struct OverlayApp {
 
 impl OverlayApp {
     pub fn new(
-        _cc: &eframe::CreationContext<'_>,
+        cc: &eframe::CreationContext<'_>,
         hotkeys_rx: mpsc::Receiver<Hotkey>,
         mic_enabled: bool,
     ) -> Self {
+        // Polished dark visuals
+        let mut visuals = egui::Visuals::dark();
+        visuals.panel_fill = Color32::from_rgb(18, 20, 24);
+        visuals.window_fill = Color32::from_rgb(18, 20, 24);
+        visuals.extreme_bg_color = Color32::from_rgb(28, 32, 38);
+        visuals.widgets.noninteractive.bg_fill = Color32::from_rgb(28, 32, 38);
+        visuals.widgets.inactive.bg_fill = Color32::from_rgb(36, 41, 49);
+        visuals.widgets.hovered.bg_fill = Color32::from_rgb(46, 54, 66);
+        visuals.widgets.active.bg_fill = Color32::from_rgb(56, 66, 82);
+        visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0, Color32::from_gray(220));
+        visuals.selection.bg_fill = Color32::from_rgb(59, 130, 246);
+        visuals.selection.stroke = Stroke::new(1.0, Color32::WHITE);
+        cc.egui_ctx.set_visuals(visuals);
+        let mut style = (*cc.egui_ctx.style_of(egui::Theme::Dark)).clone();
+        style.spacing.item_spacing = Vec2::new(8.0, 6.0);
+        style.spacing.button_padding = Vec2::new(10.0, 6.0);
+        cc.egui_ctx.set_style_of(egui::Theme::Dark, style);
         let cues = Arc::new(ArcSwap::from_pointee(M1_NOTES));
         let (pcm_tx, pcm_rx) = mpsc::channel::<NativeChunk>();
         let (events_tx, events_rx) = mpsc::channel();
@@ -90,7 +109,7 @@ impl OverlayApp {
             state: StateCtx::new(manual_mode),
             topics: M1_NOTES,
             page: 0,
-            opacity: 0.85,
+            opacity: 0.88,
             click_through: true,
             visible: true,
             move_mode: false,
@@ -200,8 +219,23 @@ impl OverlayApp {
     }
 
     fn render_home(&mut self, ui: &mut egui::Ui) {
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            ui.label(
+                RichText::new("Topics")
+                    .size(12.0)
+                    .color(Color32::from_gray(160)),
+            );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.label(
+                    RichText::new("Click a topic or use ←/→")
+                        .small()
+                        .color(Color32::from_gray(110)),
+                );
+            });
+        });
         ui.add_space(4.0);
-        ui.label(RichText::new("Topics").small().color(Color32::GRAY));
+
         let per_page = 6usize;
         let total_pages = page_count(self.topics.len()).max(1);
         if self.page >= total_pages {
@@ -209,35 +243,66 @@ impl OverlayApp {
         }
         let start = self.page * per_page;
         let end = (start + per_page).min(self.topics.len());
-        let page_topics = &self.topics[start..end];
 
-        let cols = if page_topics.len() > 3 { 2 } else { 1 };
-        egui::Grid::new("topic_grid")
-            .num_columns(cols)
-            .spacing([12.0, 4.0])
-            .show(ui, |ui| {
-                for (i, t) in page_topics.iter().enumerate() {
-                    ui.label(
-                        RichText::new(format!("• {}", t.title)).color(Color32::from_gray(230)),
-                    );
-                    if (i + 1) % cols == 0 {
-                        ui.end_row();
-                    }
-                }
-            });
+        for (i, t) in self.topics[start..end].iter().enumerate() {
+            let idx = start + i;
+            let selected = matches!(self.state.state(), AppState::Active { id } if id == idx);
+            let fill = if selected {
+                Color32::from_rgb(40, 58, 82)
+            } else {
+                Color32::from_rgb(30, 34, 42)
+            };
+            let stroke = if selected {
+                Stroke::new(1.0, Color32::from_rgb(96, 165, 250))
+            } else {
+                Stroke::new(1.0, Color32::from_rgb(48, 54, 64))
+            };
+            let resp = Frame::new()
+                .fill(fill)
+                .stroke(stroke)
+                .corner_radius(CornerRadius::same(8))
+                .inner_margin(Margin::symmetric(10, 8))
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("•").color(Color32::from_rgb(96, 165, 250)));
+                        ui.label(
+                            RichText::new(t.title)
+                                .size(14.0)
+                                .color(Color32::from_gray(235)),
+                        );
+                    });
+                })
+                .response
+                .interact(Sense::click());
+            if resp.clicked() {
+                self.state.on_match(idx, self.now_ms());
+                self.last_speech_ended_ms = None;
+            }
+            if resp.hovered() {
+                resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+            }
+            ui.add_space(4.0);
+        }
 
         if total_pages > 1 {
-            ui.add_space(4.0);
+            ui.add_space(2.0);
             ui.horizontal(|ui| {
-                if ui.small_button("◀").clicked() && self.page > 0 {
+                if ui
+                    .add_enabled(self.page > 0, egui::Button::new("◀ Prev"))
+                    .clicked()
+                {
                     self.page -= 1;
                 }
                 ui.label(
-                    RichText::new(format!("{}/{}", self.page + 1, total_pages))
+                    RichText::new(format!("Page {}/{}", self.page + 1, total_pages))
                         .small()
-                        .color(Color32::GRAY),
+                        .color(Color32::from_gray(150)),
                 );
-                if ui.small_button("▶").clicked() && self.page + 1 < total_pages {
+                if ui
+                    .add_enabled(self.page + 1 < total_pages, egui::Button::new("Next ▶"))
+                    .clicked()
+                {
                     self.page += 1;
                 }
             });
@@ -249,59 +314,87 @@ impl OverlayApp {
             self.state.go_home();
             return;
         };
-        ui.add_space(2.0);
-        ui.horizontal(|ui| {
-            ui.label(
-                RichText::new(topic.title)
-                    .strong()
-                    .size(16.0)
-                    .color(Color32::WHITE),
-            );
-            if self.state.is_pinned() {
-                ui.label(RichText::new("📌").small());
-            }
-        });
-        let avg_len = if topic.bullets.is_empty() {
-            0
-        } else {
-            topic.bullets.iter().map(|b| b.len()).sum::<usize>() / topic.bullets.len()
-        };
-        let font_size = bullet_font_size(topic.bullets.len(), avg_len, 420, 180) as f32;
-        ui.add_space(2.0);
-        for b in topic.bullets {
-            ui.label(
-                RichText::new(format!("• {}", b))
-                    .size(font_size)
-                    .color(Color32::from_gray(235)),
-            );
-        }
 
-        // Countdown bar (voice mode + not pinned)
-        let now = self.now_ms();
-        let silence_ms = self
-            .last_speech_ended_ms
-            .map(|t| now.saturating_sub(t))
-            .unwrap_or(0);
-        if let Some(remaining) = countdown_ms(
-            self.state.state(),
-            self.state.is_pinned(),
-            self.state.manual_mode(),
-            silence_ms,
-            RESET_WINDOW_MS,
-        ) {
-            let frac = (remaining as f32 / RESET_WINDOW_MS as f32).clamp(0.0, 1.0);
-            let (rect, _) =
-                ui.allocate_exact_size(egui::vec2(ui.available_width(), 3.0), egui::Sense::hover());
-            ui.painter()
-                .rect_filled(rect, CornerRadius::same(1), Color32::from_gray(60));
-            let mut fill = rect;
-            fill.set_width(rect.width() * frac);
-            ui.painter().rect_filled(
-                fill,
-                CornerRadius::same(1),
-                Color32::from_rgb(100, 180, 255),
-            );
-        }
+        Frame::new()
+            .fill(Color32::from_rgb(28, 33, 42))
+            .stroke(Stroke::new(1.0, Color32::from_rgb(55, 65, 81)))
+            .corner_radius(CornerRadius::same(10))
+            .inner_margin(Margin::symmetric(12, 10))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new(topic.title)
+                            .strong()
+                            .size(17.0)
+                            .color(Color32::WHITE),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if self.state.is_pinned() {
+                            ui.label(
+                                RichText::new("📌 Pinned")
+                                    .small()
+                                    .color(Color32::from_rgb(250, 204, 21)),
+                            );
+                        }
+                        if ui.small_button("Home").clicked() {
+                            self.state.go_home();
+                        }
+                    });
+                });
+
+                let avg_len = if topic.bullets.is_empty() {
+                    0
+                } else {
+                    topic.bullets.iter().map(|b| b.len()).sum::<usize>() / topic.bullets.len()
+                };
+                let font_size = bullet_font_size(topic.bullets.len(), avg_len, 420, 180) as f32;
+                ui.add_space(6.0);
+                for b in topic.bullets {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("•").color(Color32::from_rgb(96, 165, 250)));
+                        ui.label(
+                            RichText::new(*b)
+                                .size(font_size)
+                                .color(Color32::from_gray(236)),
+                        );
+                    });
+                    ui.add_space(2.0);
+                }
+
+                // Countdown bar (voice mode + not pinned)
+                let now = self.now_ms();
+                let silence_ms = self
+                    .last_speech_ended_ms
+                    .map(|t| now.saturating_sub(t))
+                    .unwrap_or(0);
+                if let Some(remaining) = countdown_ms(
+                    self.state.state(),
+                    self.state.is_pinned(),
+                    self.state.manual_mode(),
+                    silence_ms,
+                    RESET_WINDOW_MS,
+                ) {
+                    ui.add_space(4.0);
+                    let frac = (remaining as f32 / RESET_WINDOW_MS as f32).clamp(0.0, 1.0);
+                    let (rect, _) = ui.allocate_exact_size(
+                        egui::vec2(ui.available_width(), 4.0),
+                        egui::Sense::hover(),
+                    );
+                    ui.painter().rect_filled(
+                        rect,
+                        CornerRadius::same(2),
+                        Color32::from_rgb(55, 65, 81),
+                    );
+                    let mut fill = rect;
+                    fill.set_width(rect.width() * frac);
+                    ui.painter().rect_filled(
+                        fill,
+                        CornerRadius::same(2),
+                        Color32::from_rgb(96, 165, 250),
+                    );
+                }
+            });
     }
 }
 
@@ -350,7 +443,7 @@ impl eframe::App for OverlayApp {
                 unsafe {
                     let _ = crate::platform::flags::apply_overlay_flags(h);
                     if self.click_through {
-                        set_click_through(h, true);
+                        set_click_through(h, self.click_through);
                     }
                 }
             }
@@ -362,67 +455,135 @@ impl eframe::App for OverlayApp {
         }
 
         let alpha = (self.opacity * 255.0).clamp(0.0, 255.0) as u8;
-        let bg = Color32::from_rgba_unmultiplied(18, 18, 18, alpha);
+        let bg = Color32::from_rgba_unmultiplied(18, 20, 24, alpha);
         let rect = ui.max_rect();
-        ui.painter().rect_filled(rect, CornerRadius::ZERO, bg);
+        ui.painter().rect_filled(rect, CornerRadius::same(12), bg);
 
-        ui.horizontal(|ui| {
-            let title = ui.label(
-                RichText::new("CuePal")
-                    .strong()
-                    .size(14.0)
-                    .color(Color32::WHITE),
-            );
-            if self.move_mode {
-                let resp = ui.interact(
-                    title.rect,
-                    ui.make_persistent_id("drag_handle"),
-                    egui::Sense::drag(),
+        Frame::new()
+            .inner_margin(Margin::symmetric(12, 10))
+            .show(ui, |ui| {
+                // Header / drag region
+                let header_resp = ui
+                    .horizontal(|ui| {
+                        ui.label(
+                            RichText::new("CuePal")
+                                .strong()
+                                .size(15.0)
+                                .color(Color32::WHITE),
+                        );
+                        let (dot_color, status_text) = match &self.mic {
+                            MicState::Listening => (Color32::from_rgb(34, 197, 94), "Listening"),
+                            MicState::NoSignal => (Color32::from_rgb(234, 179, 8), "No signal"),
+                            MicState::Error(_) => (Color32::from_rgb(239, 68, 68), "Error"),
+                            MicState::Off => (Color32::from_gray(140), "Manual"),
+                        };
+                        ui.label(RichText::new("●").color(dot_color));
+                        ui.label(
+                            RichText::new(status_text)
+                                .small()
+                                .color(Color32::from_gray(170)),
+                        );
+                        if self.move_mode {
+                            ui.label(
+                                RichText::new("Move mode")
+                                    .small()
+                                    .color(Color32::from_rgb(96, 165, 250)),
+                            );
+                        }
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui
+                                .small_button(if self.visible { "Hide" } else { "Show" })
+                                .clicked()
+                            {
+                                self.visible = !self.visible;
+                                ctx.send_viewport_cmd(ViewportCommand::Visible(self.visible));
+                            }
+                        });
+                    })
+                    .response;
+
+                // Drag: in move mode or when click-through is off, allow dragging from the header.
+                let drag_resp = ui.interact(
+                    header_resp.rect,
+                    ui.make_persistent_id("header_drag"),
+                    Sense::click_and_drag(),
                 );
-                if resp.drag_started() {
+                if (self.move_mode || !self.click_through) && drag_resp.drag_started() {
                     ctx.send_viewport_cmd(ViewportCommand::StartDrag);
                 }
-            }
-            let dot_color = match self.mic {
-                MicState::Listening => Color32::from_rgb(76, 175, 80),
-                MicState::NoSignal => Color32::from_rgb(255, 193, 7),
-                MicState::Error(_) => Color32::from_rgb(244, 67, 54),
-                MicState::Off => Color32::from_gray(120),
-            };
-            ui.label(RichText::new("●").color(dot_color));
-            if let MicState::Error(e) = &self.mic {
-                ui.label(
-                    RichText::new(e)
-                        .small()
-                        .color(Color32::from_rgb(244, 67, 54)),
-                );
-            }
-        });
 
-        match self.state.state() {
-            AppState::Home => self.render_home(ui),
-            AppState::Active { id } => self.render_active(ui, id),
-        }
+                if let MicState::Error(e) = &self.mic {
+                    ui.add_space(4.0);
+                    Frame::new()
+                        .fill(Color32::from_rgb(60, 30, 30))
+                        .stroke(Stroke::new(1.0, Color32::from_rgb(127, 29, 29)))
+                        .corner_radius(CornerRadius::same(6))
+                        .inner_margin(Margin::symmetric(8, 6))
+                        .show(ui, |ui| {
+                            ui.label(
+                                RichText::new(e)
+                                    .small()
+                                    .color(Color32::from_rgb(252, 165, 165)),
+                            );
+                        });
+                }
 
-        ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-            ui.horizontal(|ui| {
-                ui.label(RichText::new("opacity").small().color(Color32::GRAY));
-                ui.add(egui::Slider::new(&mut self.opacity, 0.60..=0.95));
-                let label = if self.click_through {
-                    "click-through: ON"
-                } else {
-                    "click-through: OFF"
-                };
-                if ui.small_button(label).clicked() {
-                    self.click_through = !self.click_through;
-                    if let Some(h) = self.hwnd {
-                        unsafe {
-                            set_click_through(h, self.click_through);
+                ui.add_space(4.0);
+                match self.state.state() {
+                    AppState::Home => self.render_home(ui),
+                    AppState::Active { id } => self.render_active(ui, id),
+                }
+
+                ui.add_space(6.0);
+                ui.separator();
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new("Opacity")
+                            .small()
+                            .color(Color32::from_gray(150)),
+                    );
+                    ui.add(egui::Slider::new(&mut self.opacity, 0.60..=0.95).show_value(false));
+                    if ui
+                        .small_button(if self.click_through {
+                            "Click-through: ON"
+                        } else {
+                            "Click-through: OFF"
+                        })
+                        .clicked()
+                    {
+                        self.click_through = !self.click_through;
+                        self.move_mode = !self.click_through;
+                        if let Some(h) = self.hwnd {
+                            unsafe {
+                                set_click_through(h, self.click_through);
+                            }
                         }
                     }
-                }
+                    if ui
+                        .small_button(if self.state.is_pinned() {
+                            "Unpin"
+                        } else {
+                            "Pin"
+                        })
+                        .clicked()
+                    {
+                        if self.state.is_pinned() {
+                            self.state.unpin();
+                        } else {
+                            self.state.pin();
+                        }
+                    }
+                });
+                ui.add_space(2.0);
+                ui.label(
+                    RichText::new(
+                        "Hotkeys: Ctrl+Alt+G toggle · H home · P pin · Shift+←/→ topics · M move",
+                    )
+                    .small()
+                    .color(Color32::from_gray(110)),
+                );
             });
-        });
 
         ctx.request_repaint_after(Duration::from_millis(100));
     }
