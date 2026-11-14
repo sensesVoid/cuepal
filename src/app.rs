@@ -1,3 +1,4 @@
+use crate::notes::M1_NOTES;
 use crate::audio::{start_capture, AudioStatus, NativeChunk};
 use crate::platform::flags::{cached_hwnd, ensure_flags, set_click_through};
 use crate::platform::tray;
@@ -8,18 +9,10 @@ use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-const SPIKE_CUES: &[&str] = &[
-    "on system architecture",
-    "tell me about a project",
-    "my biggest challenge",
-    "why this company",
-    "walk me through your background",
-];
-
 pub struct SpikeApp {
     mic: MicState,
     #[allow(dead_code)]
-    cues: Arc<ArcSwap<Vec<String>>>,
+    cues: Arc<ArcSwap<crate::notes::CueIndex>>,
     opacity: f32,
     click_through: bool,
     visible: bool,
@@ -33,9 +26,7 @@ pub struct SpikeApp {
 
 impl SpikeApp {
     pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
-        let cues = Arc::new(ArcSwap::from_pointee(
-            SPIKE_CUES.iter().map(|s| s.to_string()).collect(),
-        ));
+        let cues = Arc::new(ArcSwap::from_pointee(crate::notes::M1_NOTES));
         let (status_tx, status_rx) = mpsc::channel();
         let (pcm_tx, pcm_rx) = mpsc::channel::<NativeChunk>();
         let (events_tx, events_rx) = mpsc::channel();
@@ -102,9 +93,15 @@ impl eframe::App for SpikeApp {
         // Drain engine events.
         while let Ok(ev) = self.events_rx.try_recv() {
             match ev {
-                UiEvent::Match(m) if Instant::now() >= self.cooldown_until => {
-                    self.last_match = Some(m);
-                    self.cooldown_until = Instant::now() + Duration::from_millis(1500);
+                UiEvent::Match { topic, latency_ms, at } => {
+                    if Instant::now() >= self.cooldown_until {
+                        self.last_match = Some(MatchInfo {
+                            topic,
+                            latency_ms,
+                            at,
+                        });
+                        self.cooldown_until = Instant::now() + Duration::from_millis(1500);
+                    }
                 }
                 UiEvent::Mic(ms) => self.mic = ms,
                 _ => {}
@@ -148,6 +145,7 @@ impl eframe::App for SpikeApp {
                 MicState::Listening => Color32::from_rgb(76, 175, 80),
                 MicState::NoSignal => Color32::from_rgb(255, 193, 7),
                 MicState::Error(_) => Color32::from_rgb(244, 67, 54),
+                MicState::Off => Color32::from_gray(120),
             };
             ui.label(RichText::new("●").color(dot_color));
             if let MicState::Error(e) = &self.mic {
@@ -161,7 +159,8 @@ impl eframe::App for SpikeApp {
 
         if let Some(m) = &self.last_match {
             ui.add_space(4.0);
-            ui.label(RichText::new(&m.cue).size(18.0).color(Color32::WHITE));
+            let title = M1_NOTES.get(m.topic).map(|t| t.title).unwrap_or("?");
+            ui.label(RichText::new(title).size(18.0).color(Color32::WHITE));
             ui.label(
                 RichText::new(format!("latency_ms={}", m.latency_ms))
                     .small()
@@ -174,9 +173,9 @@ impl eframe::App for SpikeApp {
                     .small()
                     .color(Color32::GRAY),
             );
-            for c in SPIKE_CUES {
+            for t in M1_NOTES {
                 ui.label(
-                    RichText::new(format!("• {c}"))
+                    RichText::new(format!("• {}", t.title))
                         .small()
                         .color(Color32::from_gray(120)),
                 );

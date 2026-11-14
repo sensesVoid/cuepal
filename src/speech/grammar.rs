@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 /// Vosk recognizer grammar: a JSON array of phrase strings, `[unk]` last.
 /// Consumed by Task 2's integration test (build_grammar_json) and Task 4's
 /// engine; the allow holds until those land.

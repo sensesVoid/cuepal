@@ -3,8 +3,9 @@
 //! channel; matches leave over another channel.
 
 use crate::audio::{downmix_to_mono, NativeChunk, Resampler16k};
+use crate::notes::{build_grammar_json, CueIndex};
 use crate::speech::ffi::{FfiError, Model, Recognizer, VoskApi};
-use crate::speech::grammar::{build_grammar_json, detect_match};
+use crate::speech::grammar::normalize;
 use arc_swap::ArcSwap;
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::Arc;
@@ -16,35 +17,46 @@ pub enum MicState {
     Listening,
     NoSignal,
     Error(String),
+    #[allow(dead_code)]
+    Off,
 }
 
 /// What the engine tells the UI.
 #[derive(Debug)]
 pub enum UiEvent {
-    Match(MatchInfo),
+    Match {
+        topic: usize,
+        latency_ms: u32,
+        #[allow(dead_code)]
+        at: Instant,
+    },
+    Close,
+    SpeechEnded {
+        #[allow(dead_code)]
+        at: Instant,
+    },
     Mic(MicState),
 }
 
 /// A recognized cue. Logs hold timings only — no audio, no transcript.
 #[derive(Debug, Clone)]
 pub struct MatchInfo {
-    pub cue: String,
+    pub topic: usize,
     pub latency_ms: u32,
     #[allow(dead_code)]
-    pub at: Instant, // reserved: spike-notes latency check; M1 formalizes
+    pub at: Instant,
 }
 
-/// Handle to the running recognizer thread. M0: marker only — the thread
-/// runs for the process lifetime; M1 adds a shutdown signal.
+/// Handle to the running recognizer thread. M0: marker only.
 pub struct EngineHandle {}
 
 pub struct Engine;
 
 impl Engine {
     /// Build the recognizer and spawn the processing thread. Any FFI failure
-    /// returns Err before any thread starts (FR-9: never crash the app).
+    /// returns Err before any thread starts (FR-9).
     pub fn spawn(
-        cues: Arc<ArcSwap<Vec<String>>>,
+        cues: Arc<ArcSwap<CueIndex>>,
         events_tx: mpsc::Sender<UiEvent>,
         pcm_rx: mpsc::Receiver<NativeChunk>,
     ) -> Result<EngineHandle, FfiError> {
@@ -53,7 +65,8 @@ impl Engine {
         let api = Arc::new(api);
         let model = unsafe { Model::new(&api, &model_path()) }?;
         let recognizer = unsafe { Recognizer::new(model, 16000.0) }?;
-        recognizer.set_grammar(build_grammar_json(&cues.load().to_vec()).as_str());
+        let topics: CueIndex = **cues.load();
+        recognizer.set_grammar(build_grammar_json(topics).as_str());
 
         std::thread::Builder::new()
             .name("cuepal-recognizer".to_string())
@@ -63,8 +76,7 @@ impl Engine {
     }
 }
 
-/// Resolve the model folder relative to the executable so the portable zip
-/// works regardless of the process's working directory (PRD packaging).
+/// Resolve the model folder relative to the executable.
 pub fn model_path() -> String {
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
@@ -76,13 +88,13 @@ pub fn model_path() -> String {
 
 fn run_loop(
     recognizer: Recognizer,
-    cues: Arc<ArcSwap<Vec<String>>>,
+    cues: Arc<ArcSwap<CueIndex>>,
     events_tx: mpsc::Sender<UiEvent>,
     pcm_rx: mpsc::Receiver<NativeChunk>,
 ) {
     let mut resampler: Option<Resampler16k> = None;
-    let mut last_grammar: Vec<String> = cues.load().to_vec();
-    let mut last_matched: Option<String> = None;
+    let mut last_grammar: CueIndex = **cues.load();
+    let mut last_matched: Option<usize> = None;
     let mut sent_no_signal = false;
 
     loop {
@@ -100,13 +112,18 @@ fn run_loop(
         sent_no_signal = false;
         let _ = events_tx.send(UiEvent::Mic(MicState::Listening));
 
-        // Cue changes rebuild the grammar off-thread (PRD architecture rule).
-        let current_cues = cues.load().to_vec();
-        if current_cues != last_grammar {
-            recognizer.set_grammar(build_grammar_json(&current_cues).as_str());
-            last_grammar = current_cues.clone();
+        let current_topics: CueIndex = **cues.load();
+        if current_topics != last_grammar {
+            recognizer.set_grammar(build_grammar_json(current_topics).as_str());
+            last_grammar = current_topics;
             last_matched = None;
         }
+
+        let flat: Vec<(usize, String)> = current_topics
+            .iter()
+            .enumerate()
+            .flat_map(|(ti, t)| t.cues.iter().map(move |c| (ti, normalize(c))))
+            .collect();
 
         let res = match resampler.as_mut() {
             Some(r) => r,
@@ -118,13 +135,13 @@ fn run_loop(
                 }
             },
         };
-        let mut chunks: Vec<Vec<i16>> = Vec::new();
-        if let Err(e) = res.push(&downmix_to_mono(&chunk.samples, chunk.channels), &mut chunks) {
+        let mut pieces: Vec<Vec<i16>> = Vec::new();
+        if let Err(e) = res.push(&downmix_to_mono(&chunk.samples, chunk.channels), &mut pieces) {
             let _ = events_tx.send(UiEvent::Mic(MicState::Error(e.to_string())));
             continue;
         }
 
-        for piece in &chunks {
+        for piece in &pieces {
             let speech_ended = recognizer.accept_waveform(piece);
             let mut text = recognizer.partial_result();
             if speech_ended {
@@ -140,33 +157,51 @@ fn run_loop(
             if text.is_empty() {
                 continue;
             }
-            if let Some(idx) = detect_match(&text, &current_cues) {
-                let cue = current_cues[idx].clone();
-                if should_report_match(&last_matched, &cue) {
+            let norm = normalize(&text);
+
+            // Closing cue of the open card -> Close.
+            if let Some(open) = last_matched {
+                let closing = current_topics[open].closing_cues;
+                if closing.iter().any(|c| norm.contains(&normalize(c))) {
+                    let _ = events_tx.send(UiEvent::Close);
+                    last_matched = None;
+                    continue;
+                }
+            }
+
+            // Longest contained cue wins.
+            let best = flat
+                .iter()
+                .filter(|(_, c)| !c.is_empty() && norm.contains(c))
+                .max_by_key(|(_, c)| c.len())
+                .map(|(ti, _)| *ti);
+            if let Some(topic) = best {
+                if should_report_match(&last_matched, topic) {
                     let latency_ms = (Instant::now().saturating_duration_since(chunk.captured_at))
                         .as_millis() as u32;
-                    log::info!("match cue_len={} latency_ms={latency_ms}", cue.len());
-                    let _ = events_tx.send(UiEvent::Match(MatchInfo {
-                        cue: cue.clone(),
+                    log::info!("match topic={topic} latency_ms={latency_ms}");
+                    let _ = events_tx.send(UiEvent::Match {
+                        topic,
                         latency_ms,
                         at: chunk.captured_at,
-                    }));
+                    });
                 }
-                last_matched = Some(cue);
+                last_matched = Some(topic);
                 if speech_ended {
                     last_matched = None;
                 }
+            }
+            if speech_ended {
+                let _ = events_tx.send(UiEvent::SpeechEnded { at: chunk.captured_at });
             }
         }
     }
 }
 
-/// Pure decision (testable): report a match unless it is the exact same cue
-/// that is still being spoken (intra-utterance repeat).
-pub fn should_report_match(last: &Option<String>, cue: &str) -> bool {
+pub fn should_report_match(last: &Option<usize>, topic: usize) -> bool {
     match last {
         None => true,
-        Some(prev) => prev != cue,
+        Some(l) => *l != topic,
     }
 }
 
@@ -174,16 +209,16 @@ pub fn should_report_match(last: &Option<String>, cue: &str) -> bool {
 mod tests {
     use super::*;
     #[test]
-    fn report_first_match() {
-        assert!(should_report_match(&None, "on system architecture"));
+    fn should_report_first_match() {
+        assert!(should_report_match(&None, 0));
     }
     #[test]
-    fn suppress_intra_utterance_repeat() {
-        assert!(!should_report_match(&Some("on system architecture".to_string()), "on system architecture"));
+    fn suppress_same_topic_repeat() {
+        assert!(!should_report_match(&Some(0), 0));
     }
     #[test]
-    fn report_different_cue() {
-        assert!(should_report_match(&Some("on system architecture".to_string()), "why this company"));
+    fn report_different_topic() {
+        assert!(should_report_match(&Some(0), 1));
     }
     #[test]
     fn model_path_ends_in_model() {
