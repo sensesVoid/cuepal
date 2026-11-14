@@ -12,14 +12,21 @@ pub enum TrayCommand {
 /// before `eframe::run_native` so winit's message pump drives the events.
 pub fn create_tray() -> Result<TrayIcon, String> {
     let menu = Menu::new();
-    menu
-        .append(&MenuItem::with_id("toggle_visible", "Show / Hide overlay", true, None))
-        .map_err(|e| e.to_string())?;
-    menu
-        .append(&MenuItem::with_id("toggle_click_through", "Toggle click-through", true, None))
-        .map_err(|e| e.to_string())?;
-    menu
-        .append(&MenuItem::with_id("quit", "Quit", true, None))
+    menu.append(&MenuItem::with_id(
+        "toggle_visible",
+        "Show / Hide overlay",
+        true,
+        None,
+    ))
+    .map_err(|e| e.to_string())?;
+    menu.append(&MenuItem::with_id(
+        "toggle_click_through",
+        "Toggle click-through",
+        true,
+        None,
+    ))
+    .map_err(|e| e.to_string())?;
+    menu.append(&MenuItem::with_id("quit", "Quit", true, None))
         .map_err(|e| e.to_string())?;
 
     // 16x16 solid green icon, generated in code (no asset files in M0).

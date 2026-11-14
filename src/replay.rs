@@ -71,8 +71,8 @@ mod tests {
     #[ignore = "requires local model + labeled audio"]
     fn latency_p95_under_400ms() {
         // Load WAV
-        let mut reader = hound::WavReader::open("testdata/latency.wav")
-            .expect("testdata/latency.wav required");
+        let mut reader =
+            hound::WavReader::open("testdata/latency.wav").expect("testdata/latency.wav required");
         let spec = reader.spec();
         let channels = spec.channels;
         let rate = spec.sample_rate;
@@ -88,9 +88,10 @@ mod tests {
         };
 
         // Optional expected timings (documented format)
-        let _expected: Option<serde_json::Value> = std::fs::read_to_string("testdata/latency.expected.json")
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok());
+        let _expected: Option<serde_json::Value> =
+            std::fs::read_to_string("testdata/latency.expected.json")
+                .ok()
+                .and_then(|s| serde_json::from_str(&s).ok());
 
         let cues = Arc::new(ArcSwap::from_pointee(M1_NOTES));
         let (events_tx, events_rx) = mpsc::channel();

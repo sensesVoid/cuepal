@@ -141,11 +141,38 @@ mod tests {
         let mut s = StateCtx::new(false);
         s.on_match(0, 1000);
         // not enough dwell yet
-        assert!(!should_reset(s.state(), s.is_pinned(), s.manual_mode(), true, 3000, 2000, 2500, 3000));
+        assert!(!should_reset(
+            s.state(),
+            s.is_pinned(),
+            s.manual_mode(),
+            true,
+            3000,
+            2000,
+            2500,
+            3000
+        ));
         // dwell ok but silence too short
-        assert!(!should_reset(s.state(), s.is_pinned(), s.manual_mode(), true, 1000, 4000, 2500, 3000));
+        assert!(!should_reset(
+            s.state(),
+            s.is_pinned(),
+            s.manual_mode(),
+            true,
+            1000,
+            4000,
+            2500,
+            3000
+        ));
         // all conditions met
-        assert!(should_reset(s.state(), s.is_pinned(), s.manual_mode(), true, 3000, 4000, 2500, 3000));
+        assert!(should_reset(
+            s.state(),
+            s.is_pinned(),
+            s.manual_mode(),
+            true,
+            3000,
+            4000,
+            2500,
+            3000
+        ));
     }
 
     #[test]
@@ -153,14 +180,32 @@ mod tests {
         let mut s = StateCtx::new(false);
         s.on_match(0, 0);
         s.pin();
-        assert!(!should_reset(s.state(), s.is_pinned(), s.manual_mode(), true, 5000, 10000, 2500, 3000));
+        assert!(!should_reset(
+            s.state(),
+            s.is_pinned(),
+            s.manual_mode(),
+            true,
+            5000,
+            10000,
+            2500,
+            3000
+        ));
     }
 
     #[test]
     fn manual_mode_never_auto_resets() {
         let mut s = StateCtx::new(true);
         s.on_match(0, 0);
-        assert!(!should_reset(s.state(), s.is_pinned(), s.manual_mode(), true, 5000, 10000, 2500, 3000));
+        assert!(!should_reset(
+            s.state(),
+            s.is_pinned(),
+            s.manual_mode(),
+            true,
+            5000,
+            10000,
+            2500,
+            3000
+        ));
     }
 
     #[test]
@@ -175,9 +220,18 @@ mod tests {
 
     #[test]
     fn countdown_hidden_when_pinned_or_manual() {
-        assert_eq!(countdown_ms(AppState::Active { id: 0 }, true, false, 1000, 2500), None);
-        assert_eq!(countdown_ms(AppState::Active { id: 0 }, false, true, 1000, 2500), None);
-        assert_eq!(countdown_ms(AppState::Active { id: 0 }, false, false, 1000, 2500), Some(1500));
+        assert_eq!(
+            countdown_ms(AppState::Active { id: 0 }, true, false, 1000, 2500),
+            None
+        );
+        assert_eq!(
+            countdown_ms(AppState::Active { id: 0 }, false, true, 1000, 2500),
+            None
+        );
+        assert_eq!(
+            countdown_ms(AppState::Active { id: 0 }, false, false, 1000, 2500),
+            Some(1500)
+        );
     }
 
     #[test]

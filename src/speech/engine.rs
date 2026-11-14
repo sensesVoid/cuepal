@@ -136,7 +136,10 @@ fn run_loop(
             },
         };
         let mut pieces: Vec<Vec<i16>> = Vec::new();
-        if let Err(e) = res.push(&downmix_to_mono(&chunk.samples, chunk.channels), &mut pieces) {
+        if let Err(e) = res.push(
+            &downmix_to_mono(&chunk.samples, chunk.channels),
+            &mut pieces,
+        ) {
             let _ = events_tx.send(UiEvent::Mic(MicState::Error(e.to_string())));
             continue;
         }
@@ -160,8 +163,11 @@ fn run_loop(
 
             // Closing cue of the open card -> Close.
             if let Some(open) = last_matched {
-                let closing: Vec<String> =
-                    current_topics[open].closing_cues.iter().map(|s| s.to_string()).collect();
+                let closing: Vec<String> = current_topics[open]
+                    .closing_cues
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect();
                 if crate::matcher::detect_closing(&text, &closing) {
                     let _ = events_tx.send(UiEvent::Close);
                     last_matched = None;
@@ -187,7 +193,9 @@ fn run_loop(
                 }
             }
             if speech_ended {
-                let _ = events_tx.send(UiEvent::SpeechEnded { at: chunk.captured_at });
+                let _ = events_tx.send(UiEvent::SpeechEnded {
+                    at: chunk.captured_at,
+                });
             }
         }
     }

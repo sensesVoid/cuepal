@@ -46,7 +46,12 @@ impl Drop for HotkeySession {
         if let Some(tid) = self.thread_id.take() {
             unsafe {
                 use windows::Win32::UI::WindowsAndMessaging::{PostThreadMessageW, WM_QUIT};
-                let _ = PostThreadMessageW(tid, WM_QUIT, windows::Win32::Foundation::WPARAM(0), windows::Win32::Foundation::LPARAM(0));
+                let _ = PostThreadMessageW(
+                    tid,
+                    WM_QUIT,
+                    windows::Win32::Foundation::WPARAM(0),
+                    windows::Win32::Foundation::LPARAM(0),
+                );
             }
         }
         if let Some(h) = self.handle.take() {
@@ -119,13 +124,51 @@ pub fn detect_conflicts(bindings: &[HotkeyBinding]) -> Vec<Hotkey> {
     out
 }
 
+/// Default M1 hotkey bindings (conflict-avoidant).
+pub fn default_bindings() -> Vec<HotkeyBinding> {
+    vec![
+        HotkeyBinding {
+            id: Hotkey::Toggle,
+            modifiers: MOD_CONTROL | MOD_ALT,
+            vk: 0x47,
+        }, // G
+        HotkeyBinding {
+            id: Hotkey::Home,
+            modifiers: MOD_CONTROL | MOD_ALT,
+            vk: 0x48,
+        }, // H
+        HotkeyBinding {
+            id: Hotkey::Pin,
+            modifiers: MOD_CONTROL | MOD_ALT,
+            vk: 0x50,
+        }, // P
+        HotkeyBinding {
+            id: Hotkey::Next,
+            modifiers: MOD_CONTROL | MOD_ALT | MOD_SHIFT,
+            vk: VK_RIGHT,
+        },
+        HotkeyBinding {
+            id: Hotkey::Prev,
+            modifiers: MOD_CONTROL | MOD_ALT | MOD_SHIFT,
+            vk: VK_LEFT,
+        },
+        HotkeyBinding {
+            id: Hotkey::MoveMode,
+            modifiers: MOD_CONTROL | MOD_ALT,
+            vk: 0x4D,
+        }, // M
+    ]
+}
+
 #[cfg(windows)]
 pub fn start_hotkeys(
     tx: mpsc::Sender<Hotkey>,
     bindings: Vec<HotkeyBinding>,
 ) -> Result<HotkeySession, HotkeyError> {
     use windows::Win32::System::Threading::GetCurrentThreadId;
-    use windows::Win32::UI::Input::KeyboardAndMouse::{RegisterHotKey, UnregisterHotKey, HOT_KEY_MODIFIERS};
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        RegisterHotKey, UnregisterHotKey, HOT_KEY_MODIFIERS,
+    };
     use windows::Win32::UI::WindowsAndMessaging::{
         DispatchMessageW, GetMessageW, TranslateMessage, MSG, WM_HOTKEY,
     };
@@ -148,12 +191,7 @@ pub fn start_hotkeys(
                     continue; // skip known duplicates
                 }
                 let res = unsafe {
-                    RegisterHotKey(
-                        None,
-                        b.id as i32,
-                        HOT_KEY_MODIFIERS(b.modifiers),
-                        b.vk,
-                    )
+                    RegisterHotKey(None, b.id as i32, HOT_KEY_MODIFIERS(b.modifiers), b.vk)
                 };
                 if res.is_err() {
                     log::warn!("hotkey registration failed for {:?}", b.id);

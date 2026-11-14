@@ -10,8 +10,10 @@ mod speech;
 mod state;
 
 use app::OverlayApp;
+use hotkeys::{default_bindings, start_hotkeys};
 use platform::flags::OVERLAY_TITLE;
 use platform::version::{is_supported, os_build};
+use std::sync::mpsc;
 
 fn main() {
     env_logger::init();
@@ -25,6 +27,14 @@ fn main() {
     let manual = std::env::args().any(|a| a == "--manual");
     let mic_enabled = !manual;
     log::info!("cuepal m0 scaffold ok (os build {build}, mic_enabled={mic_enabled})");
+
+    let (hotkey_tx, hotkey_rx) = mpsc::channel();
+    let hotkey_session = start_hotkeys(hotkey_tx, default_bindings()).ok();
+    if let Some(ref s) = hotkey_session {
+        if !s.conflicts.is_empty() {
+            log::warn!("hotkey conflicts: {:?}", s.conflicts);
+        }
+    }
 
     // Watcher thread: discover the overlay HWND once it exists, apply flags.
     std::thread::spawn(|| {
@@ -56,9 +66,10 @@ fn main() {
         ..Default::default()
     };
 
+    let _hotkey_session = hotkey_session;
     let _ = eframe::run_native(
         "CuePal Overlay (spike)",
         options,
-        Box::new(move |cc| Ok(Box::new(OverlayApp::new(cc, mic_enabled)))),
+        Box::new(move |cc| Ok(Box::new(OverlayApp::new(cc, hotkey_rx, mic_enabled)))),
     );
 }

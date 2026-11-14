@@ -121,7 +121,10 @@ mod tests {
 
     fn topics() -> Vec<(Vec<&'static str>, Vec<&'static str>)> {
         vec![
-            (vec!["on system architecture", "how i designed the system"], vec!["that's the architecture"]),
+            (
+                vec!["on system architecture", "how i designed the system"],
+                vec!["that's the architecture"],
+            ),
             (vec!["biggest challenge", "hardest problem"], vec![]),
         ]
     }
@@ -129,13 +132,19 @@ mod tests {
     #[test]
     fn longest_cue_wins() {
         let mut m = Matcher::new(topics());
-        assert_eq!(m.process("i want to talk on system architecture", 0), MatcherAction::Open(0));
+        assert_eq!(
+            m.process("i want to talk on system architecture", 0),
+            MatcherAction::Open(0)
+        );
     }
 
     #[test]
     fn cooldown_blocks_retrigger() {
         let mut m = Matcher::new(topics());
-        assert_eq!(m.process("on system architecture", 0), MatcherAction::Open(0));
+        assert_eq!(
+            m.process("on system architecture", 0),
+            MatcherAction::Open(0)
+        );
         // within 1.5 s -> blocked (distinct cue, still on cooldown)
         assert_eq!(m.process("biggest challenge", 1000), MatcherAction::None);
         // after 1.5 s -> allowed
@@ -145,15 +154,27 @@ mod tests {
     #[test]
     fn open_card_ignores_its_own_cue() {
         let mut m = Matcher::new(topics());
-        assert_eq!(m.process("on system architecture", 0), MatcherAction::Open(0));
-        assert_eq!(m.process("on system architecture", 5000), MatcherAction::None);
+        assert_eq!(
+            m.process("on system architecture", 0),
+            MatcherAction::Open(0)
+        );
+        assert_eq!(
+            m.process("on system architecture", 5000),
+            MatcherAction::None
+        );
     }
 
     #[test]
     fn closing_cue_returns_close() {
         let mut m = Matcher::new(topics());
-        assert_eq!(m.process("on system architecture", 0), MatcherAction::Open(0));
-        assert_eq!(m.process("that's the architecture", 1000), MatcherAction::Close);
+        assert_eq!(
+            m.process("on system architecture", 0),
+            MatcherAction::Open(0)
+        );
+        assert_eq!(
+            m.process("that's the architecture", 1000),
+            MatcherAction::Close
+        );
     }
 
     #[test]
@@ -183,7 +204,13 @@ mod tests {
 
     #[test]
     fn detect_closing_works() {
-        assert!(detect_closing("that's the architecture", &["that's the architecture".to_string()]));
-        assert!(!detect_closing("hello", &["that's the architecture".to_string()]));
+        assert!(detect_closing(
+            "that's the architecture",
+            &["that's the architecture".to_string()]
+        ));
+        assert!(!detect_closing(
+            "hello",
+            &["that's the architecture".to_string()]
+        ));
     }
 }

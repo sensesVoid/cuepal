@@ -39,6 +39,7 @@ pub struct OverlayApp {
     opacity: f32,
     click_through: bool,
     visible: bool,
+    move_mode: bool,
     last_speech_ended_ms: Option<u64>,
     events_rx: mpsc::Receiver<UiEvent>,
     hotkeys_rx: Option<mpsc::Receiver<Hotkey>>,
@@ -49,7 +50,11 @@ pub struct OverlayApp {
 }
 
 impl OverlayApp {
-    pub fn new(_cc: &eframe::CreationContext<'_>, mic_enabled: bool) -> Self {
+    pub fn new(
+        _cc: &eframe::CreationContext<'_>,
+        hotkeys_rx: mpsc::Receiver<Hotkey>,
+        mic_enabled: bool,
+    ) -> Self {
         let cues = Arc::new(ArcSwap::from_pointee(M1_NOTES));
         let (pcm_tx, pcm_rx) = mpsc::channel::<NativeChunk>();
         let (events_tx, events_rx) = mpsc::channel();
@@ -88,9 +93,10 @@ impl OverlayApp {
             opacity: 0.85,
             click_through: true,
             visible: true,
+            move_mode: false,
             last_speech_ended_ms: None,
             events_rx,
-            hotkeys_rx: None,
+            hotkeys_rx: Some(hotkeys_rx),
             hwnd: None,
             audio_session,
             start: Instant::now(),
@@ -124,7 +130,8 @@ impl OverlayApp {
                 self.step_topic(-1);
             }
             Hotkey::MoveMode => {
-                self.click_through = !self.click_through;
+                self.move_mode = !self.move_mode;
+                self.click_through = !self.move_mode;
                 if let Some(h) = self.hwnd {
                     unsafe {
                         set_click_through(h, self.click_through);
@@ -194,11 +201,7 @@ impl OverlayApp {
 
     fn render_home(&mut self, ui: &mut egui::Ui) {
         ui.add_space(4.0);
-        ui.label(
-            RichText::new("Topics")
-                .small()
-                .color(Color32::GRAY),
-        );
+        ui.label(RichText::new("Topics").small().color(Color32::GRAY));
         let per_page = 6usize;
         let total_pages = page_count(self.topics.len()).max(1);
         if self.page >= total_pages {
@@ -215,8 +218,7 @@ impl OverlayApp {
             .show(ui, |ui| {
                 for (i, t) in page_topics.iter().enumerate() {
                     ui.label(
-                        RichText::new(format!("• {}", t.title))
-                            .color(Color32::from_gray(230)),
+                        RichText::new(format!("• {}", t.title)).color(Color32::from_gray(230)),
                     );
                     if (i + 1) % cols == 0 {
                         ui.end_row();
@@ -288,11 +290,17 @@ impl OverlayApp {
             RESET_WINDOW_MS,
         ) {
             let frac = (remaining as f32 / RESET_WINDOW_MS as f32).clamp(0.0, 1.0);
-            let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 3.0), egui::Sense::hover());
-            ui.painter().rect_filled(rect, CornerRadius::same(1), Color32::from_gray(60));
+            let (rect, _) =
+                ui.allocate_exact_size(egui::vec2(ui.available_width(), 3.0), egui::Sense::hover());
+            ui.painter()
+                .rect_filled(rect, CornerRadius::same(1), Color32::from_gray(60));
             let mut fill = rect;
             fill.set_width(rect.width() * frac);
-            ui.painter().rect_filled(fill, CornerRadius::same(1), Color32::from_rgb(100, 180, 255));
+            ui.painter().rect_filled(
+                fill,
+                CornerRadius::same(1),
+                Color32::from_rgb(100, 180, 255),
+            );
         }
     }
 }
@@ -310,7 +318,9 @@ impl eframe::App for OverlayApp {
                 tray::TrayCommand::ToggleClickThrough => {
                     self.click_through = !self.click_through;
                     if let Some(h) = self.hwnd {
-                        unsafe { set_click_through(h, self.click_through); }
+                        unsafe {
+                            set_click_through(h, self.click_through);
+                        }
                     }
                 }
                 tray::TrayCommand::Quit => {
@@ -357,12 +367,22 @@ impl eframe::App for OverlayApp {
         ui.painter().rect_filled(rect, CornerRadius::ZERO, bg);
 
         ui.horizontal(|ui| {
-            ui.label(
+            let title = ui.label(
                 RichText::new("CuePal")
                     .strong()
                     .size(14.0)
                     .color(Color32::WHITE),
             );
+            if self.move_mode {
+                let resp = ui.interact(
+                    title.rect,
+                    ui.make_persistent_id("drag_handle"),
+                    egui::Sense::drag(),
+                );
+                if resp.drag_started() {
+                    ctx.send_viewport_cmd(ViewportCommand::StartDrag);
+                }
+            }
             let dot_color = match self.mic {
                 MicState::Listening => Color32::from_rgb(76, 175, 80),
                 MicState::NoSignal => Color32::from_rgb(255, 193, 7),
