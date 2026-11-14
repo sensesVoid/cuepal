@@ -1,0 +1,10 @@
+name: T9 JobIfHashFiles
+on:
+  push:
+    branches: [main]
+jobs:
+  hello:
+    runs-on: ubuntu-latest
+    if: ${{ hashFiles('Cargo.toml') != '' }}
+    steps:
+      - run: echo hello
