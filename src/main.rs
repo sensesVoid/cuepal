@@ -1,5 +1,6 @@
 mod app;
 mod audio;
+mod matcher;
 mod notes;
 mod platform;
 mod speech;
