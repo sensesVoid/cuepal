@@ -1,0 +1,20 @@
+# Rust build output
+/target/
+
+# Downloaded binaries and models (CI fetches these; never commit them)
+/libvosk.dll
+/vosk-api/
+/model/
+/model-staging/
+/dist/
+
+# Archives
+*.zip
+
+# Local test recordings (privacy + size; force-add fixtures with git add -f)
+*.wav
+*.pcm
+
+# Editors
+.vscode/
+.idea/

@@ -1,0 +1,71 @@
+# Release pipeline — builds the portable zip described in the PRD:
+# cuepal.exe + libvosk.dll + model folder, attached to a GitHub release.
+#
+# Trigger: push a tag like v0.1.0. Skips itself while no Cargo.toml exists.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: Package portable zip (windows-latest)
+    runs-on: windows-latest
+    if: ${{ hashFiles('Cargo.toml') != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Fetch libvosk.dll (pinned vosk-api v0.3.45)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Invoke-WebRequest -Uri "https://github.com/alphacep/vosk-api/releases/download/v0.3.45/vosk-win64-0.3.45.zip" -OutFile vosk-api.zip
+          Expand-Archive -Path vosk-api.zip -DestinationPath vosk-api
+
+      # Small English model, Apache 2.0 licensed, redistributable.
+      # Matches the PRD settings default: model_path = "model".
+      - name: Fetch Vosk small English model
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Invoke-WebRequest -Uri "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip" -OutFile model.zip
+          Expand-Archive -Path model.zip -DestinationPath model-staging
+          $src = Get-ChildItem model-staging -Directory | Select-Object -First 1
+          Move-Item $src.FullName model
+
+      - name: Stage portable zip
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item target/release/cuepal.exe dist/
+          $dll = Get-ChildItem -Path vosk-api -Recurse -Filter libvosk.dll | Select-Object -First 1
+          if (-not $dll) { throw "libvosk.dll not found in vosk-win64-0.3.45.zip" }
+          Copy-Item $dll.FullName dist/
+          Copy-Item model dist/model -Recurse
+          Compress-Archive -Path "dist/*" -DestinationPath "CuePal-${{ github.ref_name }}-win64.zip"
+
+      - name: Attach to GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" "CuePal-${{ github.ref_name }}-win64.zip" --title "CuePal ${{ github.ref_name }}" --generate-notes
