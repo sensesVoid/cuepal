@@ -3,9 +3,8 @@
 //! channel; matches leave over another channel.
 
 use crate::audio::{downmix_to_mono, NativeChunk, Resampler16k};
-use crate::notes::{build_grammar_json, CueIndex};
+use crate::notes::{build_grammar_json_from_topics, CueIndex};
 use crate::speech::ffi::{FfiError, Model, Recognizer, VoskApi};
-use crate::speech::grammar::normalize;
 use arc_swap::ArcSwap;
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::Arc;
@@ -66,7 +65,7 @@ impl Engine {
         let model = unsafe { Model::new(&api, &model_path()) }?;
         let recognizer = unsafe { Recognizer::new(model, 16000.0) }?;
         let topics: CueIndex = **cues.load();
-        recognizer.set_grammar(build_grammar_json(topics).as_str());
+        recognizer.set_grammar(build_grammar_json_from_topics(topics).as_str());
 
         std::thread::Builder::new()
             .name("cuepal-recognizer".to_string())
@@ -114,16 +113,10 @@ fn run_loop(
 
         let current_topics: CueIndex = **cues.load();
         if current_topics != last_grammar {
-            recognizer.set_grammar(build_grammar_json(current_topics).as_str());
+            recognizer.set_grammar(build_grammar_json_from_topics(current_topics).as_str());
             last_grammar = current_topics;
             last_matched = None;
         }
-
-        let flat: Vec<(usize, String)> = current_topics
-            .iter()
-            .enumerate()
-            .flat_map(|(ti, t)| t.cues.iter().map(move |c| (ti, normalize(c))))
-            .collect();
 
         let res = match resampler.as_mut() {
             Some(r) => r,
@@ -157,25 +150,20 @@ fn run_loop(
             if text.is_empty() {
                 continue;
             }
-            let norm = normalize(&text);
 
             // Closing cue of the open card -> Close.
             if let Some(open) = last_matched {
-                let closing = current_topics[open].closing_cues;
-                if closing.iter().any(|c| norm.contains(&normalize(c))) {
+                let closing: Vec<String> =
+                    current_topics[open].closing_cues.iter().map(|s| s.to_string()).collect();
+                if crate::matcher::detect_closing(&text, &closing) {
                     let _ = events_tx.send(UiEvent::Close);
                     last_matched = None;
                     continue;
                 }
             }
 
-            // Longest contained cue wins.
-            let best = flat
-                .iter()
-                .filter(|(_, c)| !c.is_empty() && norm.contains(c))
-                .max_by_key(|(_, c)| c.len())
-                .map(|(ti, _)| *ti);
-            if let Some(topic) = best {
+            // Longest contained cue wins (matcher).
+            if let Some(topic) = crate::matcher::detect_cue(&text, current_topics, last_matched) {
                 if should_report_match(&last_matched, topic) {
                     let latency_ms = (Instant::now().saturating_duration_since(chunk.captured_at))
                         .as_millis() as u32;

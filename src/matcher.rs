@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use crate::notes::Topic;
 use crate::speech::grammar::normalize;
 
 const COOLDOWN_MS: u64 = 1500;
@@ -88,14 +89,14 @@ pub fn cooldown_elapsed(last_ms: Option<u64>, now_ms: u64) -> bool {
 }
 
 /// Pure helper: longest contained cue -> topic index, or None.
-pub fn detect_cue(text: &str, topics: &[(Vec<String>, Vec<String>)], open: Option<usize>) -> Option<usize> {
+pub fn detect_cue(text: &str, topics: &[Topic], open: Option<usize>) -> Option<usize> {
     let norm = normalize(text);
     let mut best: Option<(usize, usize)> = None;
-    for (ti, (cues, _)) in topics.iter().enumerate() {
+    for (ti, t) in topics.iter().enumerate() {
         if Some(ti) == open {
             continue; // open card ignores its own cue
         }
-        for c in cues {
+        for c in t.cues {
             let nc = normalize(c);
             if !nc.is_empty() && norm.contains(&nc) {
                 match best {
@@ -170,9 +171,13 @@ mod tests {
 
     #[test]
     fn detect_cue_picks_longest() {
-        let t = vec![
-            (vec!["tell me about a project".to_string(), "project".to_string()], vec![]),
-        ];
+        let t = [Topic {
+            id: "t0",
+            title: "t",
+            cues: &["tell me about a project", "project"],
+            bullets: &[],
+            closing_cues: &[],
+        }];
         assert_eq!(detect_cue("so tell me about a project", &t, None), Some(0));
     }
 

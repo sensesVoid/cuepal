@@ -3,8 +3,6 @@
 
 #![allow(dead_code)]
 
-
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Topic {
     pub id: &'static str,
@@ -67,8 +65,18 @@ pub static M1_NOTES: CueIndex = &[
     },
 ];
 
-/// Vosk grammar: every cue + closing cue, then `[unk]`.
+/// Vosk grammar: every cue only, then `[unk]` (M0 behavior).
 pub fn build_grammar_json(topics: &[Topic]) -> String {
+    let mut phrases: Vec<&str> = Vec::new();
+    for t in topics {
+        phrases.extend(t.cues);
+    }
+    phrases.push("[unk]");
+    serde_json::to_string(&phrases).expect("grammar phrases are valid json strings")
+}
+
+/// Vosk grammar: every cue + closing cue, then `[unk]`.
+pub fn build_grammar_json_from_topics(topics: &[Topic]) -> String {
     let mut phrases: Vec<&str> = Vec::new();
     for t in topics {
         phrases.extend(t.cues);
@@ -98,6 +106,17 @@ mod tests {
     #[test]
     fn grammar_json_contains_every_cue_and_unk() {
         let json = build_grammar_json(M1_NOTES);
+        for t in M1_NOTES {
+            for c in t.cues {
+                assert!(json.contains(c), "missing cue: {c}");
+            }
+        }
+        assert!(json.ends_with(r#","[unk]"]"#));
+    }
+
+    #[test]
+    fn grammar_json_from_topics_contains_all_cues_and_closing() {
+        let json = build_grammar_json_from_topics(M1_NOTES);
         for t in M1_NOTES {
             for c in t.cues {
                 assert!(json.contains(c), "missing cue: {c}");
