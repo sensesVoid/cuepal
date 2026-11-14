@@ -140,8 +140,8 @@ The overlay never reads the microphone, and the matcher never draws.
 - **Shared data:** the audio thread reads an immutable cue index behind arc-swap. The editor builds a new index and swaps it in, so matching never blocks on a write lock. The recognizer is rebuilt off-thread when cues change.
 - **Windows:** eframe with a transparent window. After creation, apply WDA\_EXCLUDEFROMCAPTURE, WS\_EX\_NOACTIVATE and WS\_EX\_TOOLWINDOW through the windows crate, and re-apply if the window is ever re-created.
 - **Mic:** cpal in shared mode so Zoom keeps its own access; resample with rubato.
-- **Packaging:** cuepal.exe, libvosk.dll and the model folder in one portable zip.
-- **Crates:** eframe, serde, serde\_json, windows, cpal, rubato, vosk, notify, arc-swap.
+- **Packaging:** cuepal.exe, libvosk.dll with its three MinGW runtime DLLs (libgcc_s_seh-1.dll, libstdc++-6.dll, libwinpthread-1.dll) and the model folder in one portable zip.
+- **Crates:** eframe, serde, serde\_json, windows, cpal, rubato, libloading (runtime FFI over libvosk.dll, chosen over the vosk crate because a missing DLL must degrade to an error state, not a link failure), notify, arc-swap.
 
 ## UX
 

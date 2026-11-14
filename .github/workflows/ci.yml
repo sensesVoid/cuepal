@@ -32,19 +32,17 @@ jobs:
       - name: Cache cargo build
         uses: Swatinem/rust-cache@v2
 
-      # The vosk crate needs libvosk.dll available (linking and/or runtime).
-      # Fetch the pinned prebuilt binary so recognizer code and tests work
-      # as soon as the M0 scaffold lands. If the crate chosen in M0 needs an
-      # import library or a different layout, adjust this step then.
-      - name: Fetch libvosk.dll (pinned vosk-api v0.3.45)
+      # Vosk is bound at runtime via libloading, so libvosk.dll (and its three
+      # MinGW runtime DLLs, which are hard dependencies) must be present next
+      # to the test binary. Pinned prebuilt release.
+      - name: Fetch libvosk.dll + runtime deps (pinned vosk-api v0.3.45)
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
           Invoke-WebRequest -Uri "https://github.com/alphacep/vosk-api/releases/download/v0.3.45/vosk-win64-0.3.45.zip" -OutFile vosk-api.zip
           Expand-Archive -Path vosk-api.zip -DestinationPath vosk-api
-          $dll = Get-ChildItem -Path vosk-api -Recurse -Filter libvosk.dll | Select-Object -First 1
-          if (-not $dll) { throw "libvosk.dll not found in vosk-win64-0.3.45.zip" }
-          Copy-Item $dll.FullName .
+          Copy-Item "vosk-api/vosk-win64-0.3.45/*.dll" .
+          if (-not (Test-Path "libvosk.dll")) { throw "libvosk.dll not found in vosk-win64-0.3.45.zip" }
           Add-Content $env:GITHUB_PATH $PWD.Path
 
       - name: Check formatting

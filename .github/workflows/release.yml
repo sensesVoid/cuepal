@@ -59,9 +59,9 @@ jobs:
           $ErrorActionPreference = "Stop"
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item target/release/cuepal.exe dist/
-          $dll = Get-ChildItem -Path vosk-api -Recurse -Filter libvosk.dll | Select-Object -First 1
-          if (-not $dll) { throw "libvosk.dll not found in vosk-win64-0.3.45.zip" }
-          Copy-Item $dll.FullName dist/
+          # libvosk.dll plus its three MinGW runtime DLLs — all required at runtime
+          Copy-Item "vosk-api/vosk-win64-0.3.45/*.dll" dist/
+          if (-not (Test-Path "dist/libvosk.dll")) { throw "libvosk.dll not found in vosk-win64-0.3.45.zip" }
           Copy-Item model dist/model -Recurse
           Compress-Archive -Path "dist/*" -DestinationPath "CuePal-${{ github.ref_name }}-win64.zip"
 
