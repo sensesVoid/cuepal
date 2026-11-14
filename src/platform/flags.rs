@@ -6,8 +6,8 @@ use std::sync::Mutex;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::WindowsAndMessaging::{
     FindWindowW, GetWindowDisplayAffinity, GetWindowLongPtrW, SetWindowDisplayAffinity,
-    SetWindowLongPtrW, GWL_EXSTYLE, WDA_EXCLUDEFROMCAPTURE, WS_EX_LAYERED,
-    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
+    SetWindowLongPtrW, GWL_EXSTYLE, WDA_EXCLUDEFROMCAPTURE, WS_EX_LAYERED, WS_EX_NOACTIVATE,
+    WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
 };
 
 /// Unique title — `FindWindowW` discovers the HWND without depending on
@@ -16,11 +16,16 @@ pub const OVERLAY_TITLE: &str = "CuePal Overlay (spike)";
 
 static OVERLAY_HWND: Mutex<Option<isize>> = Mutex::new(None);
 
-/// Discover (and cache) the overlay HWND.
+/// Discover (and cache) the overlay HWND. The cache is invalidated if the
+/// handle is no longer a live window (re-creation after a DPI change, etc.),
+/// so flags are re-applied to the new window instead of a dead handle.
 pub fn find_overlay_hwnd() -> Option<HWND> {
-    if let Ok(g) = OVERLAY_HWND.lock() {
+    if let Ok(mut g) = OVERLAY_HWND.lock() {
         if let Some(v) = *g {
-            return Some(HWND(v as *mut _));
+            if is_window_live(v) {
+                return Some(HWND(v as *mut _));
+            }
+            *g = None; // stale handle — re-query below
         }
     }
     let h = unsafe { FindWindowW(None, windows::core::w!("CuePal Overlay (spike)")).ok()? };
@@ -36,6 +41,18 @@ pub fn find_overlay_hwnd() -> Option<HWND> {
 /// Cached HWND handle for other modules (tray, app).
 pub fn cached_hwnd() -> Option<HWND> {
     find_overlay_hwnd()
+}
+
+/// Pure-ish check used to invalidate the cached handle: `IsWindow(0)` is
+/// always false, so a freshly-initialized cache can be tested without a
+/// real window.
+pub fn is_window_live(hwnd: isize) -> bool {
+    if hwnd == 0 {
+        return false;
+    }
+    unsafe {
+        windows::Win32::UI::WindowsAndMessaging::IsWindow(Some(HWND(hwnd as *mut _))).as_bool()
+    }
 }
 
 /// Apply every flag the live overlay needs. Single source of truth.
@@ -77,5 +94,24 @@ pub unsafe fn ensure_flags(hwnd: HWND) {
         || style & (WS_EX_LAYERED.0 as isize) == 0
     {
         let _ = apply_overlay_flags(hwnd);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn zero_handle_is_not_live() {
+        assert!(!is_window_live(0));
+    }
+    #[test]
+    fn bogus_cached_handle_is_not_returned() {
+        if let Ok(mut g) = OVERLAY_HWND.lock() {
+            *g = Some(1); // 1 is never a real window
+        }
+        assert!(find_overlay_hwnd().is_none());
+        if let Ok(g) = OVERLAY_HWND.lock() {
+            assert!(g.is_none() || g.unwrap() != 1);
+        }
     }
 }

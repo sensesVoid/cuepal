@@ -3,11 +3,6 @@
 //! Loaded at run time rather than linked so that a missing DLL or corrupt
 //! model degrades to an error state (FR-9), never a crash or link failure.
 //! Only the processing thread touches `Model`/`Recognizer`.
-//!
-//! The whole module is `dead_code` until Task 4's engine consumes it
-//! (bin crates have no public API surface).
-
-#![allow(dead_code)]
 
 use libloading::Library;
 use serde_json::Value;
@@ -56,6 +51,7 @@ type LogLevelFn = unsafe extern "system" fn(c_int);
 
 /// Owns libvosk.dll and its resolved function pointers.
 pub struct VoskApi {
+    #[allow(dead_code)] // kept alive so the fn pointers stay valid
     #[allow(dead_code)] // kept alive so the fn pointers stay valid
     lib: Library,
     model_new: ModelNewFn,

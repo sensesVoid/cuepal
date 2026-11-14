@@ -1,10 +1,6 @@
 //! The recognizer thread: owns the Vosk model/recognizer, never touches the
 //! UI, never blocks on a lock. Audio arrives as native-rate chunks over a
 //! channel; matches leave over another channel.
-//!
-//! The whole module is `dead_code` until Task 5's app consumes it.
-
-#![allow(dead_code)]
 
 use crate::audio::{downmix_to_mono, NativeChunk, Resampler16k};
 use crate::speech::ffi::{FfiError, Model, Recognizer, VoskApi};
@@ -34,7 +30,8 @@ pub enum UiEvent {
 pub struct MatchInfo {
     pub cue: String,
     pub latency_ms: u32,
-    pub at: Instant,
+    #[allow(dead_code)]
+    pub at: Instant, // reserved: spike-notes latency check; M1 formalizes
 }
 
 /// Handle to the running recognizer thread. M0: marker only — the thread
@@ -54,7 +51,7 @@ impl Engine {
         let api = unsafe { VoskApi::load(None) }?;
         api.set_loglevel(0);
         let api = Arc::new(api);
-        let model = unsafe { Model::new(&api, "model") }?;
+        let model = unsafe { Model::new(&api, &model_path()) }?;
         let recognizer = unsafe { Recognizer::new(model, 16000.0) }?;
         recognizer.set_grammar(build_grammar_json(&cues.load().to_vec()).as_str());
 
@@ -64,6 +61,17 @@ impl Engine {
             .map_err(|e| FfiError::Symbol(format!("spawn recognizer thread: {e}")))?;
         Ok(EngineHandle {})
     }
+}
+
+/// Resolve the model folder relative to the executable so the portable zip
+/// works regardless of the process's working directory (PRD packaging).
+pub fn model_path() -> String {
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            return dir.join("model").to_string_lossy().to_string();
+        }
+    }
+    "model".to_string()
 }
 
 fn run_loop(
@@ -111,10 +119,7 @@ fn run_loop(
             },
         };
         let mut chunks: Vec<Vec<i16>> = Vec::new();
-        if let Err(e) = res.push(
-            &downmix_to_mono(&chunk.samples, chunk.channels),
-            &mut chunks,
-        ) {
+        if let Err(e) = res.push(&downmix_to_mono(&chunk.samples, chunk.channels), &mut chunks) {
             let _ = events_tx.send(UiEvent::Mic(MicState::Error(e.to_string())));
             continue;
         }
@@ -137,8 +142,7 @@ fn run_loop(
             }
             if let Some(idx) = detect_match(&text, &current_cues) {
                 let cue = current_cues[idx].clone();
-                let repeat = last_matched.as_ref() == Some(&cue);
-                if !repeat {
+                if should_report_match(&last_matched, &cue) {
                     let latency_ms = (Instant::now().saturating_duration_since(chunk.captured_at))
                         .as_millis() as u32;
                     log::info!("match cue_len={} latency_ms={latency_ms}", cue.len());
@@ -149,7 +153,44 @@ fn run_loop(
                     }));
                 }
                 last_matched = Some(cue);
+                if speech_ended {
+                    last_matched = None;
+                }
             }
         }
+    }
+}
+
+/// Pure decision (testable): report a match unless it is the exact same cue
+/// that is still being spoken (intra-utterance repeat).
+pub fn should_report_match(last: &Option<String>, cue: &str) -> bool {
+    match last {
+        None => true,
+        Some(prev) => prev != cue,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn report_first_match() {
+        assert!(should_report_match(&None, "on system architecture"));
+    }
+    #[test]
+    fn suppress_intra_utterance_repeat() {
+        assert!(!should_report_match(&Some("on system architecture".to_string()), "on system architecture"));
+    }
+    #[test]
+    fn report_different_cue() {
+        assert!(should_report_match(&Some("on system architecture".to_string()), "why this company"));
+    }
+    #[test]
+    fn model_path_ends_in_model() {
+        assert!(model_path().ends_with("model"));
+    }
+    #[test]
+    fn model_path_is_absolute_when_possible() {
+        assert!(std::path::Path::new(&model_path()).is_absolute());
     }
 }

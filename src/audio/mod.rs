@@ -1,9 +1,5 @@
 //! Microphone capture. The cpal callback only copies audio into a channel —
 //! no locks, no resampling on the audio thread (PRD architecture rule).
-//!
-//! The whole module is `dead_code` until Task 5's app consumes it.
-
-#![allow(dead_code)]
 
 use std::sync::mpsc;
 use std::time::Instant;
@@ -18,9 +14,13 @@ pub struct NativeChunk {
 
 #[derive(Debug)]
 pub enum AudioStatus {
+    #[allow(dead_code)]
     Running {
+        #[allow(dead_code)]
         device: String,
+        #[allow(dead_code)]
         rate: u32,
+        #[allow(dead_code)]
         channels: u16,
     },
     Error(String),

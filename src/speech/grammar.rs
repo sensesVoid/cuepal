@@ -1,7 +1,6 @@
 /// Vosk recognizer grammar: a JSON array of phrase strings, `[unk]` last.
 /// Consumed by Task 2's integration test (build_grammar_json) and Task 4's
 /// engine; the allow holds until those land.
-#[allow(dead_code)]
 pub fn build_grammar_json(cues: &[String]) -> String {
     let mut phrases: Vec<&str> = cues.iter().map(|s| s.as_str()).collect();
     phrases.push("[unk]");
@@ -10,7 +9,6 @@ pub fn build_grammar_json(cues: &[String]) -> String {
 
 /// Lowercase, strip everything that is not alphanumeric to a space,
 /// collapse runs of spaces, trim. (Filler-word dropping is M1.)
-#[allow(dead_code)]
 pub fn normalize(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut prev_space = true;
@@ -38,7 +36,6 @@ pub fn normalize(text: &str) -> String {
 
 /// Match on normalized text; among cues contained in it, longest wins
 /// (ties go to the first). None when nothing matches.
-#[allow(dead_code)]
 pub fn detect_match(text: &str, cues: &[String]) -> Option<usize> {
     let normalized = normalize(text);
     let mut best: Option<(usize, usize)> = None; // (index, normalized cue len)
