@@ -4,6 +4,8 @@ mod hotkeys;
 mod matcher;
 mod notes;
 mod platform;
+#[cfg(test)]
+mod replay;
 mod speech;
 mod state;
 
