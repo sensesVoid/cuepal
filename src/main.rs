@@ -7,7 +7,7 @@ mod platform;
 mod speech;
 mod state;
 
-use app::SpikeApp;
+use app::OverlayApp;
 use platform::flags::OVERLAY_TITLE;
 use platform::version::{is_supported, os_build};
 
@@ -57,6 +57,6 @@ fn main() {
     let _ = eframe::run_native(
         "CuePal Overlay (spike)",
         options,
-        Box::new(move |cc| Ok(Box::new(SpikeApp::new(cc, mic_enabled)))),
+        Box::new(move |cc| Ok(Box::new(OverlayApp::new(cc, mic_enabled)))),
     );
 }

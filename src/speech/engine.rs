@@ -25,6 +25,7 @@ pub enum MicState {
 pub enum UiEvent {
     Match {
         topic: usize,
+        #[allow(dead_code)]
         latency_ms: u32,
         #[allow(dead_code)]
         at: Instant,
@@ -38,11 +39,12 @@ pub enum UiEvent {
 }
 
 /// A recognized cue. Logs hold timings only — no audio, no transcript.
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct MatchInfo {
     pub topic: usize,
-    pub latency_ms: u32,
     #[allow(dead_code)]
+    pub latency_ms: u32,
     pub at: Instant,
 }
 
