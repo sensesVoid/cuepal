@@ -6,7 +6,6 @@
 
 #![allow(dead_code)]
 
-
 use crate::audio::{downmix_to_mono, NativeChunk, Resampler16k};
 use crate::speech::ffi::{FfiError, Model, Recognizer, VoskApi};
 use crate::speech::grammar::{build_grammar_json, detect_match};

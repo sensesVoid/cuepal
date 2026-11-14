@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>CuePal blur test</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; }
+    #counter { font-size: 3rem; margin: 1rem 0; }
+    #log { white-space: pre-wrap; font-family: monospace; background: #f4f4f4; padding: 1rem; height: 20rem; overflow: auto; }
+    button { padding: .5rem 1rem; }
+  </style>
+</head>
+<body>
+  <h1>CuePal focus-integrity check</h1>
+  <p>Open this page, then interact with CuePal (click through the overlay, change opacity, fire hotkeys). The pass condition: the counter stays <strong>0</strong>.</p>
+  <div id="counter">0</div>
+  <div id="log"></div>
+  <p><button onclick="clearLog()">Clear</button></p>
+  <script>
+    const logEl = document.getElementById('log');
+    const counterEl = document.getElementById('counter');
+    let count = 0;
+    function append(kind) {
+      count++;
+      counterEl.textContent = count;
+      const line = new Date().toISOString() + '  ' + kind + '\n';
+      logEl.textContent += line;
+      try { localStorage.setItem('blurlog', logEl.textContent); } catch (e) {}
+    }
+    window.addEventListener('blur', () => append('window blur'));
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'visible') append('visibilitychange: ' + document.visibilityState);
+    });
+    function clearLog() {
+      count = 0; counterEl.textContent = 0; logEl.textContent = '';
+      try { localStorage.removeItem('blurlog'); } catch (e) {}
+    }
+    try { const s = localStorage.getItem('blurlog'); if (s) logEl.textContent = s; } catch (e) {}
+  </script>
+</body>
+</html>
