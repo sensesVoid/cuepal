@@ -1,0 +1,11 @@
+name: T8 OnTags
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  hello:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hello

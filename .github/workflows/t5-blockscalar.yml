@@ -1,0 +1,16 @@
+name: T5 BlockScalar
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  hello:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Invoke-WebRequest -Uri "https://example.com/x-${{ github.run_id }}.zip" -OutFile x.zip
+          if (-not (Test-Path "x.zip")) { throw "not found" }
